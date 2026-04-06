@@ -1,0 +1,186 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ puzzle.title }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 40px 20px;
+            background: #f5f7fb;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        }
+
+        .meta {
+            margin-top: 12px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .scenario {
+            margin-top: 24px;
+            padding: 20px;
+            border-radius: 12px;
+            background: #f9fafb;
+            line-height: 1.7;
+            white-space: pre-wrap;
+        }
+
+        .section {
+            margin-top: 28px;
+        }
+
+        .section h2 {
+            margin-bottom: 12px;
+            font-size: 20px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            box-sizing: border-box;
+            font: inherit;
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 12px;
+            padding: 10px 16px;
+            border: 0;
+            border-radius: 10px;
+            background: #2563eb;
+            color: #ffffff;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        button[disabled] {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .log-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .log-item {
+            margin-bottom: 14px;
+            padding: 16px;
+            border-radius: 12px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+        }
+
+        .label {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #e0e7ff;
+            color: #3730a3;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .empty {
+            padding: 20px;
+            border-radius: 12px;
+            background: #eef2ff;
+        }
+
+        .hint-list {
+            list-style: decimal;
+            padding-left: 22px;
+            margin: 16px 0 0;
+        }
+
+        .hint-list li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+
+        .notice {
+            margin-top: 12px;
+            color: #b45309;
+            font-size: 14px;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ puzzle.title }}</h1>
+        <div class="meta">게임 ID: {{ game_session.id }}</div>
+        <div class="scenario">{{ puzzle.scenario }}</div>
+
+        <div class="section">
+            <h2>힌트</h2>
+            <div class="meta">남은 힌트 횟수: {{ remaining_hint_count }} / 총 3회</div>
+            <form method="post" action="{% url 'game:use_hint' game_session.id %}">
+                {% csrf_token %}
+                <button type="submit" {% if remaining_hint_count == 0 or hint_message == "다음으로 공개할 힌트가 없습니다." %}disabled{% endif %}>
+                    힌트 보기
+                </button>
+            </form>
+
+            {% if revealed_hints %}
+                <ol class="hint-list">
+                    {% for hint in revealed_hints %}
+                        <li>{{ hint }}</li>
+                    {% endfor %}
+                </ol>
+            {% else %}
+                <div class="empty">아직 공개된 힌트가 없습니다.</div>
+            {% endif %}
+
+            {% if hint_message %}
+                <div class="notice">{{ hint_message }}</div>
+            {% endif %}
+        </div>
+
+        <div class="section">
+            <h2>질문하기</h2>
+            <form method="post" action="{% url 'game:ask_question' game_session.id %}">
+                {% csrf_token %}
+                <textarea name="question_text" placeholder="문제에 대해 궁금한 점을 입력하세요." required></textarea>
+                <button type="submit">질문 제출</button>
+            </form>
+        </div>
+
+        <div class="section">
+            <h2>최근 질문/응답</h2>
+            {% if question_logs %}
+                <ul class="log-list">
+                    {% for log in question_logs %}
+                        <li class="log-item">
+                            <div><strong>질문</strong></div>
+                            <div>{{ log.question_text }}</div>
+                            <div class="label">{{ log.answer_label }}</div>
+                            <div class="meta">{{ log.created_at|date:"Y-m-d H:i" }}</div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <div class="empty">아직 등록된 질문이 없습니다.</div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

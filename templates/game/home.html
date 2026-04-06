@@ -1,0 +1,99 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puzzle List</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 40px 20px;
+            background: #f5f7fb;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 24px 0 0;
+        }
+
+        li {
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            background: #f9fafb;
+        }
+
+        p {
+            margin: 10px 0 0;
+            line-height: 1.6;
+        }
+
+        .actions {
+            margin-top: 16px;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 10px 14px;
+            border-radius: 10px;
+            background: #2563eb;
+            color: #ffffff;
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .meta {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 8px;
+        }
+
+        .empty {
+            padding: 20px;
+            border-radius: 12px;
+            background: #eef2ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>퍼즐 문제 목록</h1>
+
+        {% if puzzles %}
+            <ul>
+                {% for puzzle in puzzles %}
+                    <li>
+                        <strong>{{ puzzle.title }}</strong>
+                        <p>{{ puzzle.scenario }}</p>
+                        <div class="meta">
+                            생성일: {{ puzzle.created_at|date:"Y-m-d H:i" }}
+                        </div>
+                        <div class="actions">
+                            <a class="button" href="{% url 'game:start_game' puzzle.id %}">시작하기</a>
+                        </div>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <div class="empty">활성화된 문제가 아직 없습니다.</div>
+        {% endif %}
+    </div>
+</body>
+</html>
