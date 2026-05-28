@@ -137,6 +137,9 @@ def submit_final_answer(request, game_id):
 
 def result_view(request, game_id):
     game_session = get_object_or_404(GameSession.objects.select_related("puzzle"), id=game_id)
+    if game_session.status != GameSession.STATUS_CLEARED:
+        return redirect("game:play", game_id=game_session.id)
+
     question_count = game_session.question_logs.count()
     return render(
         request,

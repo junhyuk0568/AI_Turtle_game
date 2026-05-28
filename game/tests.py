@@ -1,6 +1,7 @@
 from django.test import TestCase
+from django.urls import reverse
 
-from .models import Puzzle, QuestionTestCase
+from .models import GameSession, Puzzle, QuestionTestCase
 from .services import (
     FINAL_ANSWER_CORRECT,
     FINAL_ANSWER_INSUFFICIENT,
@@ -121,3 +122,30 @@ class QuestionClassifierTests(TestCase):
         self.assertEqual(test_case.last_answer_label, "맞습니다")
         self.assertTrue(test_case.last_passed)
         self.assertIsNotNone(test_case.last_run_at)
+
+
+class GameFlowTests(TestCase):
+    def test_result_page_redirects_until_session_is_cleared(self):
+        puzzle = Puzzle.objects.create(
+            title="테스트 문제",
+            scenario="남자가 식당에서 수프를 먹고 집에 돌아갔다.",
+            answer_text="남자는 수프를 먹고 과거의 진실을 깨달았다.",
+        )
+        game_session = GameSession.objects.create(puzzle=puzzle, status=GameSession.STATUS_PLAYING)
+
+        response = self.client.get(reverse("game:result", args=[game_session.id]))
+
+        self.assertRedirects(response, reverse("game:play", args=[game_session.id]))
+
+    def test_result_page_is_available_after_session_is_cleared(self):
+        puzzle = Puzzle.objects.create(
+            title="테스트 문제",
+            scenario="남자가 식당에서 수프를 먹고 집에 돌아갔다.",
+            answer_text="남자는 수프를 먹고 과거의 진실을 깨달았다.",
+        )
+        game_session = GameSession.objects.create(puzzle=puzzle, status=GameSession.STATUS_CLEARED)
+
+        response = self.client.get(reverse("game:result", args=[game_session.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, puzzle.answer_text)
