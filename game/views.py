@@ -4,17 +4,31 @@ from .models import GameSession, Puzzle, QuestionLog
 from .services import FINAL_ANSWER_CORRECT, classify_final_answer, classify_question
 
 
+HINT_FIELDS = ("hint1", "hint2", "hint3")
+MAX_HINT_COUNT = len(HINT_FIELDS)
+
+
+def _get_game_session(game_id):
+    return get_object_or_404(GameSession.objects.select_related("puzzle"), id=game_id)
+
+
+def _redirect_if_cleared(game_session):
+    if game_session.status == GameSession.STATUS_CLEARED:
+        return redirect("game:result", game_id=game_session.id)
+    return None
+
+
+def _get_hints(puzzle):
+    return [getattr(puzzle, field) for field in HINT_FIELDS]
+
+
 def _get_hint_data(game_session):
-    hints = [
-        game_session.puzzle.hint1,
-        game_session.puzzle.hint2,
-        game_session.puzzle.hint3,
-    ]
+    hints = _get_hints(game_session.puzzle)
     revealed_hints = [hint for hint in hints[: game_session.hint_used_count] if hint]
-    remaining_hint_count = max(0, 3 - game_session.hint_used_count)
+    remaining_hint_count = max(0, MAX_HINT_COUNT - game_session.hint_used_count)
 
     hint_message = ""
-    if game_session.hint_used_count >= 3:
+    if game_session.hint_used_count >= MAX_HINT_COUNT:
         hint_message = "모든 힌트를 이미 사용했습니다."
     else:
         next_index = game_session.hint_used_count
@@ -45,11 +59,12 @@ def start_game(request, puzzle_id):
 
 
 def play_view(request, game_id):
-    game_session = get_object_or_404(GameSession.objects.select_related("puzzle"), id=game_id)
-    if game_session.status == GameSession.STATUS_CLEARED:
-        return redirect("game:result", game_id=game_session.id)
+    game_session = _get_game_session(game_id)
+    cleared_response = _redirect_if_cleared(game_session)
+    if cleared_response:
+        return cleared_response
 
-    question_logs = game_session.question_logs.all()
+    question_logs = game_session.question_logs.order_by("created_at")
     revealed_hints, remaining_hint_count, hint_message = _get_hint_data(game_session)
     final_answer_feedback = request.session.pop(f"final_answer_feedback_{game_session.id}", None)
     return render(
@@ -68,9 +83,10 @@ def play_view(request, game_id):
 
 
 def ask_question(request, game_id):
-    game_session = get_object_or_404(GameSession.objects.select_related("puzzle"), id=game_id)
-    if game_session.status == GameSession.STATUS_CLEARED:
-        return redirect("game:result", game_id=game_session.id)
+    game_session = _get_game_session(game_id)
+    cleared_response = _redirect_if_cleared(game_session)
+    if cleared_response:
+        return cleared_response
 
     if request.method == "POST":
         question_text = request.POST.get("question_text", "").strip()
@@ -91,16 +107,13 @@ def ask_question(request, game_id):
 
 
 def use_hint(request, game_id):
-    game_session = get_object_or_404(GameSession.objects.select_related("puzzle"), id=game_id)
-    if game_session.status == GameSession.STATUS_CLEARED:
-        return redirect("game:result", game_id=game_session.id)
+    game_session = _get_game_session(game_id)
+    cleared_response = _redirect_if_cleared(game_session)
+    if cleared_response:
+        return cleared_response
 
-    if request.method == "POST" and game_session.hint_used_count < 3:
-        hints = [
-            game_session.puzzle.hint1,
-            game_session.puzzle.hint2,
-            game_session.puzzle.hint3,
-        ]
+    if request.method == "POST" and game_session.hint_used_count < MAX_HINT_COUNT:
+        hints = _get_hints(game_session.puzzle)
         next_index = game_session.hint_used_count
         if next_index < len(hints) and hints[next_index]:
             game_session.hint_used_count += 1
@@ -110,9 +123,10 @@ def use_hint(request, game_id):
 
 
 def submit_final_answer(request, game_id):
-    game_session = get_object_or_404(GameSession.objects.select_related("puzzle"), id=game_id)
-    if game_session.status == GameSession.STATUS_CLEARED:
-        return redirect("game:result", game_id=game_session.id)
+    game_session = _get_game_session(game_id)
+    cleared_response = _redirect_if_cleared(game_session)
+    if cleared_response:
+        return cleared_response
 
     if request.method == "POST":
         submitted_answer = request.POST.get("submitted_answer", "").strip()
@@ -136,7 +150,7 @@ def submit_final_answer(request, game_id):
 
 
 def result_view(request, game_id):
-    game_session = get_object_or_404(GameSession.objects.select_related("puzzle"), id=game_id)
+    game_session = _get_game_session(game_id)
     if game_session.status != GameSession.STATUS_CLEARED:
         return redirect("game:play", game_id=game_session.id)
 
