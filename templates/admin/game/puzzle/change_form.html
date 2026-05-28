@@ -1,0 +1,18 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+    {% if original %}
+        <li>
+            <a href="{% url 'admin:game_puzzle_generate_ai_criteria' original.pk %}" class="historylink">
+                AI 판정 기준 생성
+            </a>
+        </li>
+        <li>
+            <a href="{% url 'admin:game_puzzle_run_question_tests' original.pk %}" class="historylink">
+                테스트 질문 실행
+            </a>
+        </li>
+    {% endif %}
+{% endblock %}

@@ -1,186 +1,602 @@
-﻿<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ puzzle.title }}</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 40px 20px;
-            background: #f5f7fb;
-            color: #1f2937;
+{% extends "game/base.html" %}
+
+{% block title %}{{ puzzle.title }} | AI 바다거북스프{% endblock %}
+
+{% block topbar_action %}
+<a class="nav-link" href="{% url 'game:home' %}">문제 목록</a>
+{% endblock %}
+
+{% block extra_style %}
+<style>
+    .game-room {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 350px;
+        gap: 18px;
+        align-items: start;
+    }
+
+    .page-header h1 {
+        margin-bottom: 8px;
+        font-size: clamp(30px, 3.2vw, 44px);
+        line-height: 1.08;
+    }
+
+    .chat-room,
+    .side-panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 12px 34px rgba(21, 35, 31, 0.08);
+    }
+
+    .scenario-inline {
+        max-width: 920px;
+        margin: 10px 0 10px;
+    }
+
+    .chat-room {
+        display: grid;
+        height: clamp(378px, calc(100vh - 342px), 720px);
+        min-height: 0;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        overflow: hidden;
+    }
+
+    .chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface-soft);
+    }
+
+    .host-profile {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+    }
+
+    .host-avatar,
+    .user-avatar {
+        width: 42px;
+        height: 42px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+
+    .host-avatar {
+        border: 2px solid var(--primary);
+    }
+
+    .user-avatar {
+        border: 2px solid var(--accent);
+    }
+
+    .host-name {
+        margin: 0 0 4px;
+        font-weight: 900;
+    }
+
+    .host-status {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+    }
+
+    .chat-body {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        gap: 14px;
+        padding: 16px 20px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    .message-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 10px;
+    }
+
+    .message-row.user {
+        justify-content: flex-end;
+    }
+
+    .message-stack {
+        display: flex;
+        max-width: min(68%, 560px);
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+
+    .message-row.user .message-stack {
+        align-items: flex-end;
+    }
+
+    .message-row.answer-row .message-stack {
+        max-width: min(44%, 320px);
+    }
+
+    .message-meta {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.3;
+    }
+
+    .message-row.user .message-meta {
+        text-align: right;
+    }
+
+    .message-bubble {
+        width: fit-content;
+        max-width: 100%;
+        padding: 11px 14px;
+        border-radius: 8px;
+        line-height: 1.6;
+        text-align: left;
+        white-space: normal;
+        word-break: keep-all;
+        overflow-wrap: break-word;
+    }
+
+    .message-bubble.host {
+        border: 1px solid var(--line);
+        background: #ffffff;
+    }
+
+    .message-bubble.user {
+        border: 1px solid #b8e4dc;
+        background: #e9f8f5;
+    }
+
+    .message-bubble.intro {
+        max-width: 430px;
+    }
+
+    .message-bubble.judgement {
+        padding: 9px 12px;
+        font-weight: 800;
+    }
+
+    .message-bubble.judgement.yes {
+        border-left: 4px solid var(--yes);
+    }
+
+    .message-bubble.judgement.no {
+        border-left: 4px solid var(--no);
+    }
+
+    .message-bubble.judgement.maybe {
+        border-left: 4px solid var(--maybe);
+    }
+
+    .message-bubble.judgement.irrelevant {
+        border-left: 4px solid var(--irrelevant);
+    }
+
+    .composer {
+        padding: 12px 16px;
+        border-top: 1px solid var(--line);
+        background: #ffffff;
+    }
+
+    .composer-form {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+    }
+
+    textarea {
+        width: 100%;
+        min-height: 52px;
+        max-height: 150px;
+        padding: 14px 16px;
+        border: 1px solid #c9d6d1;
+        border-radius: 8px;
+        background: var(--surface-soft);
+        color: var(--ink);
+        font: inherit;
+        line-height: 1.5;
+        resize: vertical;
+    }
+
+    textarea:focus {
+        border-color: var(--primary);
+        outline: 3px solid rgba(15, 118, 110, 0.16);
+    }
+
+    .side-panel {
+        position: sticky;
+        top: 18px;
+        height: clamp(378px, calc(100vh - 342px), 720px);
+        overflow-y: auto;
+        padding: 20px;
+    }
+
+    .scenario-box {
+        margin: 14px 0 20px;
+        padding: 16px;
+        border-left: 4px solid var(--accent);
+        border-radius: 8px;
+        background: var(--accent-soft);
+        line-height: 1.75;
+        white-space: pre-wrap;
+    }
+
+    .scenario-inline .scenario-box {
+        margin: 0;
+        padding: 12px 16px;
+        max-width: 760px;
+    }
+
+    .hint-summary {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin: 14px 0;
+    }
+
+    .hint-dot {
+        height: 10px;
+        border-radius: 999px;
+        background: #d4ddd9;
+    }
+
+    .hint-dot.used {
+        background: var(--primary);
+    }
+
+    .hint-list {
+        display: grid;
+        gap: 10px;
+        margin: 14px 0 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .hint-list li {
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-soft);
+        line-height: 1.55;
+    }
+
+    .hint-empty {
+        margin-top: 14px;
+    }
+
+    .notice {
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: #fff7ed;
+        color: #9a3412;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.5;
+    }
+
+    .answer-action {
+        width: 100%;
+        margin-top: 16px;
+    }
+
+    .answer-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(23, 32, 29, 0.42);
+    }
+
+    .answer-modal.is-open {
+        display: flex;
+    }
+
+    .answer-dialog {
+        width: min(520px, 100%);
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: var(--shadow);
+    }
+
+    .answer-dialog h2 {
+        margin-bottom: 10px;
+    }
+
+    .answer-dialog textarea {
+        min-height: 132px;
+        margin-top: 14px;
+    }
+
+    .answer-feedback {
+        margin: 14px 0 0;
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: #fff7ed;
+        color: #9a3412;
+        font-weight: 800;
+        line-height: 1.55;
+    }
+
+    .answer-dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 16px;
+    }
+
+    .side-stat {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 0;
+        border-top: 1px solid var(--line);
+    }
+
+    .side-stat.first {
+        margin-top: 18px;
+    }
+
+    .side-stat strong {
+        text-align: right;
+    }
+
+    @media (max-width: 900px) {
+        .game-room {
+            grid-template-columns: 1fr;
         }
 
-        .container {
-            max-width: 720px;
-            margin: 0 auto;
-            background: #ffffff;
-            border-radius: 16px;
-            padding: 32px;
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        .chat-room {
+            height: 560px;
         }
 
-        .meta {
-            margin-top: 12px;
-            color: #6b7280;
-            font-size: 14px;
+        .side-panel {
+            position: static;
+            order: -1;
+        }
+    }
+
+    @media (max-width: 560px) {
+        .chat-header {
+            align-items: flex-start;
+            flex-direction: column;
         }
 
-        .scenario {
-            margin-top: 24px;
-            padding: 20px;
-            border-radius: 12px;
-            background: #f9fafb;
-            line-height: 1.7;
-            white-space: pre-wrap;
+        .chat-room {
+            height: 520px;
         }
 
-        .section {
-            margin-top: 28px;
-        }
-
-        .section h2 {
-            margin-bottom: 12px;
-            font-size: 20px;
-        }
-
-        textarea {
-            width: 100%;
-            min-height: 120px;
-            padding: 14px;
-            border: 1px solid #d1d5db;
-            border-radius: 12px;
-            box-sizing: border-box;
-            font: inherit;
-            resize: vertical;
-        }
-
-        button {
-            margin-top: 12px;
-            padding: 10px 16px;
-            border: 0;
-            border-radius: 10px;
-            background: #2563eb;
-            color: #ffffff;
-            font: inherit;
-            font-weight: 700;
-            cursor: pointer;
-        }
-
-        button[disabled] {
-            background: #9ca3af;
-            cursor: not-allowed;
-        }
-
-        .log-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-
-        .log-item {
-            margin-bottom: 14px;
+        .chat-body,
+        .composer,
+        .side-panel {
             padding: 16px;
-            border-radius: 12px;
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
         }
 
-        .label {
-            display: inline-block;
-            margin-top: 10px;
-            padding: 4px 10px;
-            border-radius: 999px;
-            background: #e0e7ff;
-            color: #3730a3;
-            font-size: 13px;
-            font-weight: 700;
+        .message-stack,
+        .message-row.answer-row .message-stack {
+            max-width: 100%;
         }
 
-        .empty {
-            padding: 20px;
-            border-radius: 12px;
-            background: #eef2ff;
+        .host-avatar,
+        .user-avatar {
+            width: 36px;
+            height: 36px;
         }
 
-        .hint-list {
-            list-style: decimal;
-            padding-left: 22px;
-            margin: 16px 0 0;
+        .composer-form {
+            grid-template-columns: 1fr;
         }
 
-        .hint-list li {
-            margin-bottom: 10px;
-            line-height: 1.6;
+        .button {
+            width: 100%;
         }
+    }
+</style>
+{% endblock %}
 
-        .notice {
-            margin-top: 12px;
-            color: #b45309;
-            font-size: 14px;
-            font-weight: 700;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>{{ puzzle.title }}</h1>
-        <div class="meta">게임 ID: {{ game_session.id }}</div>
-        <div class="scenario">{{ puzzle.scenario }}</div>
+{% block content %}
+<header class="page-header">
+    <p class="eyebrow">진행자와 함께하는 추리 채팅</p>
+    <h1>{{ puzzle.title }}</h1>
+    <section class="scenario-inline" aria-label="상황">
+        <h2>상황</h2>
+        <div class="scenario-box">{{ puzzle.scenario }}</div>
+    </section>
+    <p class="lead">진행자에게 예/아니오로 답할 수 있는 질문을 던지며 사건의 진실을 좁혀가세요.</p>
+</header>
 
-        <div class="section">
-            <h2>힌트</h2>
-            <div class="meta">남은 힌트 횟수: {{ remaining_hint_count }} / 총 3회</div>
-            <form method="post" action="{% url 'game:use_hint' game_session.id %}">
+<div class="game-room">
+    <section class="chat-room" aria-label="진행자 채팅">
+        <div class="chat-header">
+            <div class="host-profile">
+                <img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">
+                <div>
+                    <p class="host-name">진행자</p>
+                    <p class="host-status">질문을 기다리는 중</p>
+                </div>
+            </div>
+            <span class="meta">질문 {{ question_logs|length }}개</span>
+        </div>
+
+        <div class="chat-body">
+            <div class="message-row host">
+                <img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">
+                <div class="message-stack">
+                    <span class="message-meta">진행자</span>
+                    <div class="message-bubble host intro">사건을 시작하겠습니다.</div>
+                    <div class="message-bubble host intro">상황을 읽고, 제가 답할 수 있는 질문을 해주세요.</div>
+                </div>
+            </div>
+
+            {% for log in question_logs reversed %}
+                <div class="message-row user">
+                    <div class="message-stack">
+                        <span class="message-meta">나</span>
+                        <div class="message-bubble user">{{ log.question_text }}</div>
+                    </div>
+                    <img class="user-avatar" src="/static/game/img/user-image.png" alt="나">
+                </div>
+
+                <div class="message-row host answer-row">
+                    <img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">
+                    <div class="message-stack">
+                        <span class="message-meta">진행자 · {{ log.created_at|date:"H:i" }}</span>
+                        <div class="message-bubble host judgement {% if log.answer_label == "맞습니다" %}yes{% elif log.answer_label == "아닙니다" %}no{% elif log.answer_label == "관계없습니다" %}irrelevant{% else %}maybe{% endif %}">
+                            {% if log.answer_label == "맞습니다" %}
+                                네, 맞습니다.
+                            {% elif log.answer_label == "아닙니다" %}
+                                아니요.
+                            {% elif log.answer_label == "관계없습니다" %}
+                                그건 관계없습니다.
+                            {% else %}
+                                질문이 조금 모호합니다.
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <div class="composer">
+            <form class="composer-form" method="post" action="{% url 'game:ask_question' game_session.id %}">
                 {% csrf_token %}
-                <button type="submit" {% if remaining_hint_count == 0 or hint_message == "다음으로 공개할 힌트가 없습니다." %}disabled{% endif %}>
-                    힌트 보기
-                </button>
-            </form>
-
-            {% if revealed_hints %}
-                <ol class="hint-list">
-                    {% for hint in revealed_hints %}
-                        <li>{{ hint }}</li>
-                    {% endfor %}
-                </ol>
-            {% else %}
-                <div class="empty">아직 공개된 힌트가 없습니다.</div>
-            {% endif %}
-
-            {% if hint_message %}
-                <div class="notice">{{ hint_message }}</div>
-            {% endif %}
-        </div>
-
-        <div class="section">
-            <h2>질문하기</h2>
-            <form method="post" action="{% url 'game:ask_question' game_session.id %}">
-                {% csrf_token %}
-                <textarea name="question_text" placeholder="문제에 대해 궁금한 점을 입력하세요." required></textarea>
-                <button type="submit">질문 제출</button>
+                <textarea name="question_text" placeholder="진행자에게 질문하기 예: 남자는 식당에서 수프를 먹었나요?" required autofocus></textarea>
+                <button class="button" type="submit">보내기</button>
             </form>
         </div>
+    </section>
 
-        <div class="section">
-            <h2>최근 질문/응답</h2>
-            {% if question_logs %}
-                <ul class="log-list">
-                    {% for log in question_logs %}
-                        <li class="log-item">
-                            <div><strong>질문</strong></div>
-                            <div>{{ log.question_text }}</div>
-                            <div class="label">{{ log.answer_label }}</div>
-                            <div class="meta">{{ log.created_at|date:"Y-m-d H:i" }}</div>
-                        </li>
-                    {% endfor %}
-                </ul>
-            {% else %}
-                <div class="empty">아직 등록된 질문이 없습니다.</div>
-            {% endif %}
+    <aside class="side-panel" aria-label="게임 정보">
+        <h2>힌트</h2>
+        <p class="meta">막히면 힌트를 하나씩 열 수 있습니다.</p>
+        <div class="hint-summary" aria-label="힌트 사용량">
+            <span class="hint-dot {% if game_session.hint_used_count >= 1 %}used{% endif %}"></span>
+            <span class="hint-dot {% if game_session.hint_used_count >= 2 %}used{% endif %}"></span>
+            <span class="hint-dot {% if game_session.hint_used_count >= 3 %}used{% endif %}"></span>
         </div>
-    </div>
-</body>
-</html>
+        <form method="post" action="{% url 'game:use_hint' game_session.id %}">
+            {% csrf_token %}
+            <button class="button warning" type="submit" {% if remaining_hint_count == 0 or hint_message == "다음으로 공개할 힌트가 없습니다." %}disabled{% endif %}>
+                힌트 열기
+            </button>
+        </form>
+
+        {% if revealed_hints %}
+            <ol class="hint-list">
+                {% for hint in revealed_hints %}
+                    <li>{{ hint }}</li>
+                {% endfor %}
+            </ol>
+        {% else %}
+            <div class="empty-state hint-empty">공개된 힌트가 없습니다.</div>
+        {% endif %}
+
+        {% if hint_message %}
+            <div class="notice">{{ hint_message }}</div>
+        {% endif %}
+
+        <button class="button answer-action" type="button" data-answer-open>정답 말하기</button>
+    </aside>
+</div>
+
+<div class="answer-modal {% if final_answer_feedback %}is-open{% endif %}" data-answer-modal>
+    <section class="answer-dialog" role="dialog" aria-modal="true" aria-labelledby="answer-modal-title">
+        <h2 id="answer-modal-title">정답 말하기</h2>
+        <p class="meta">사건의 진실을 한 문장이나 짧은 설명으로 적어주세요.</p>
+
+        {% if final_answer_feedback %}
+            <div class="answer-feedback">
+                {{ final_answer_feedback.label }}
+                {% if final_answer_feedback.submitted_answer %}
+                    <div class="meta">입력한 답: {{ final_answer_feedback.submitted_answer }}</div>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'game:submit_final_answer' game_session.id %}">
+            {% csrf_token %}
+            <textarea name="submitted_answer" placeholder="예: 남자는 과거 조난 때 먹은 음식의 정체를 깨달았다." required></textarea>
+            <div class="answer-dialog-actions">
+                <button class="button secondary" type="button" data-answer-close>계속 추리하기</button>
+                <button class="button" type="submit">정답 제출</button>
+            </div>
+        </form>
+    </section>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const questionInput = document.querySelector('textarea[name="question_text"]');
+        const questionForm = document.querySelector(".composer-form");
+        const chatBody = document.querySelector(".chat-body");
+        const answerModal = document.querySelector("[data-answer-modal]");
+        const answerOpenButton = document.querySelector("[data-answer-open]");
+        const answerCloseButton = document.querySelector("[data-answer-close]");
+
+        if (!questionInput || !questionForm) {
+            return;
+        }
+
+        if (chatBody) {
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+
+        questionInput.focus();
+
+        questionInput.addEventListener("keydown", function (event) {
+            if (event.key !== "Enter" || event.shiftKey) {
+                return;
+            }
+
+            event.preventDefault();
+
+            if (!questionInput.value.trim()) {
+                return;
+            }
+
+            questionForm.requestSubmit();
+        });
+
+        if (answerModal && answerOpenButton) {
+            answerOpenButton.addEventListener("click", function () {
+                answerModal.classList.add("is-open");
+                const answerInput = answerModal.querySelector('textarea[name="submitted_answer"]');
+                if (answerInput) {
+                    answerInput.focus();
+                }
+            });
+        }
+
+        if (answerModal && answerCloseButton) {
+            answerCloseButton.addEventListener("click", function () {
+                answerModal.classList.remove("is-open");
+                questionInput.focus();
+            });
+        }
+
+        if (answerModal) {
+            answerModal.addEventListener("click", function (event) {
+                if (event.target === answerModal) {
+                    answerModal.classList.remove("is-open");
+                    questionInput.focus();
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}
