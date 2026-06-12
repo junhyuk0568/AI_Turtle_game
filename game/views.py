@@ -1,11 +1,14 @@
+from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 
 from .models import GameSession, Puzzle, QuestionLog
-from .services import FINAL_ANSWER_CORRECT, classify_final_answer, classify_question
+from .services import FINAL_ANSWER_CORRECT, OpenAIServiceError, classify_final_answer, classify_question
 
 
 HINT_FIELDS = ("hint1", "hint2", "hint3")
 MAX_HINT_COUNT = len(HINT_FIELDS)
+MAX_QUESTION_LENGTH = 500
+MAX_ANSWER_LENGTH = 2000
 
 
 def _get_game_session(game_id):
@@ -90,13 +93,22 @@ def ask_question(request, game_id):
 
     if request.method == "POST":
         question_text = request.POST.get("question_text", "").strip()
-        if question_text:
-            answer_label = classify_question(
-                scenario=game_session.puzzle.scenario,
-                answer_text=game_session.puzzle.answer_text,
-                question_criteria=game_session.puzzle.get_question_criteria(),
-                question_text=question_text,
-            )
+        if len(question_text) > MAX_QUESTION_LENGTH:
+            messages.error(request, f"질문은 {MAX_QUESTION_LENGTH}자 이하로 입력해주세요.")
+        elif game_session.question_logs.filter(question_text=question_text).exists():
+            messages.warning(request, "이미 같은 질문을 했습니다.")
+        elif question_text:
+            try:
+                answer_label = classify_question(
+                    scenario=game_session.puzzle.scenario,
+                    answer_text=game_session.puzzle.answer_text,
+                    question_criteria=game_session.puzzle.get_question_criteria(),
+                    question_text=question_text,
+                )
+            except OpenAIServiceError as exc:
+                messages.error(request, str(exc))
+                return redirect("game:play", game_id=game_session.id)
+
             QuestionLog.objects.create(
                 game_session=game_session,
                 question_text=question_text,
@@ -130,12 +142,20 @@ def submit_final_answer(request, game_id):
 
     if request.method == "POST":
         submitted_answer = request.POST.get("submitted_answer", "").strip()
-        result_label = classify_final_answer(
-            scenario=game_session.puzzle.scenario,
-            answer_text=game_session.puzzle.answer_text,
-            answer_checkpoints=game_session.puzzle.get_answer_checkpoints(),
-            submitted_answer=submitted_answer,
-        )
+        if len(submitted_answer) > MAX_ANSWER_LENGTH:
+            messages.error(request, f"정답은 {MAX_ANSWER_LENGTH}자 이하로 입력해주세요.")
+            return redirect("game:play", game_id=game_session.id)
+
+        try:
+            result_label = classify_final_answer(
+                scenario=game_session.puzzle.scenario,
+                answer_text=game_session.puzzle.answer_text,
+                answer_checkpoints=game_session.puzzle.get_answer_checkpoints(),
+                submitted_answer=submitted_answer,
+            )
+        except OpenAIServiceError as exc:
+            messages.error(request, str(exc))
+            return redirect("game:play", game_id=game_session.id)
 
         if result_label == FINAL_ANSWER_CORRECT:
             game_session.mark_cleared(submitted_answer)

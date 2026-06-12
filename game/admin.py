@@ -1,9 +1,9 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.shortcuts import redirect
 from django.urls import path, reverse
 
 from .models import GameSession, Puzzle, QuestionLog, QuestionTestCase
-from .services import classify_question, generate_puzzle_criteria
+from .services import OpenAIServiceError, classify_question, generate_puzzle_criteria
 
 
 class QuestionTestCaseInline(admin.TabularInline):
@@ -94,7 +94,12 @@ class PuzzleAdmin(admin.ModelAdmin):
             self.message_user(request, "문제를 찾을 수 없습니다.", level="error")
             return redirect("..")
 
-        self._apply_generated_criteria(puzzle)
+        try:
+            self._apply_generated_criteria(puzzle)
+        except OpenAIServiceError as exc:
+            self.message_user(request, str(exc), level=messages.ERROR)
+            return redirect(reverse("admin:game_puzzle_change", args=[object_id]))
+
         self.message_user(request, "AI 판정 기준을 생성했습니다.")
         return redirect(reverse("admin:game_puzzle_change", args=[object_id]))
 
@@ -120,7 +125,12 @@ class PuzzleAdmin(admin.ModelAdmin):
             self.message_user(request, "문제를 찾을 수 없습니다.", level="error")
             return redirect("..")
 
-        passed_count, total_count = self._run_question_tests_for_puzzle(puzzle)
+        try:
+            passed_count, total_count = self._run_question_tests_for_puzzle(puzzle)
+        except OpenAIServiceError as exc:
+            self.message_user(request, str(exc), level=messages.ERROR)
+            return redirect(reverse("admin:game_puzzle_change", args=[object_id]))
+
         self.message_user(request, f"테스트 질문 {passed_count}/{total_count}개가 통과했습니다.")
         return redirect(reverse("admin:game_puzzle_change", args=[object_id]))
 
@@ -128,8 +138,11 @@ class PuzzleAdmin(admin.ModelAdmin):
     def generate_ai_criteria(self, request, queryset):
         updated_count = 0
         for puzzle in queryset:
-            self._apply_generated_criteria(puzzle)
-            updated_count += 1
+            try:
+                self._apply_generated_criteria(puzzle)
+                updated_count += 1
+            except OpenAIServiceError as exc:
+                self.message_user(request, f"{puzzle}: {exc}", level=messages.ERROR)
 
         self.message_user(request, f"{updated_count}개 문제의 판정 기준을 생성했습니다.")
 
@@ -138,7 +151,11 @@ class PuzzleAdmin(admin.ModelAdmin):
         total_count = 0
         passed_count = 0
         for puzzle in queryset:
-            puzzle_passed_count, puzzle_total_count = self._run_question_tests_for_puzzle(puzzle)
+            try:
+                puzzle_passed_count, puzzle_total_count = self._run_question_tests_for_puzzle(puzzle)
+            except OpenAIServiceError as exc:
+                self.message_user(request, f"{puzzle}: {exc}", level=messages.ERROR)
+                continue
             passed_count += puzzle_passed_count
             total_count += puzzle_total_count
 
@@ -184,12 +201,16 @@ class QuestionTestCaseAdmin(admin.ModelAdmin):
         total_count = 0
         passed_count = 0
         for test_case in queryset.select_related("puzzle"):
-            answer_label = classify_question(
-                scenario=test_case.puzzle.scenario,
-                answer_text=test_case.puzzle.answer_text,
-                question_text=test_case.question_text,
-                question_criteria=test_case.puzzle.get_question_criteria(),
-            )
+            try:
+                answer_label = classify_question(
+                    scenario=test_case.puzzle.scenario,
+                    answer_text=test_case.puzzle.answer_text,
+                    question_text=test_case.question_text,
+                    question_criteria=test_case.puzzle.get_question_criteria(),
+                )
+            except OpenAIServiceError as exc:
+                self.message_user(request, f"{test_case}: {exc}", level=messages.ERROR)
+                continue
             test_case.mark_result(answer_label)
             total_count += 1
             if test_case.last_passed:

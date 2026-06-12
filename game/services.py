@@ -1,7 +1,31 @@
 import json
+import logging
 import re
 
 from django.conf import settings
+
+
+logger = logging.getLogger(__name__)
+
+
+class OpenAIServiceError(Exception):
+    """Raised when the required OpenAI service cannot produce a result."""
+
+
+def _get_openai_client():
+    if not settings.OPENAI_API_KEY:
+        raise OpenAIServiceError("OpenAI API 키가 설정되지 않았습니다.")
+
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise OpenAIServiceError("OpenAI 패키지가 설치되지 않았습니다.") from exc
+
+    return OpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        max_retries=settings.OPENAI_MAX_RETRIES,
+        timeout=settings.OPENAI_TIMEOUT_SECONDS,
+    )
 
 
 LABEL_YES = "맞습니다"
@@ -127,6 +151,23 @@ def _normalize_final_answer_label(raw_text):
     return FINAL_ANSWER_INSUFFICIENT
 
 
+def _validate_question_api_label(raw_text):
+    cleaned = (raw_text or "").strip()
+    matched_labels = [label for label in LABELS if label in cleaned]
+    if len(matched_labels) != 1:
+        raise OpenAIServiceError("OpenAI API가 유효한 질문 판정값을 반환하지 않았습니다.")
+    return matched_labels[0]
+
+
+def _validate_final_answer_api_label(raw_text):
+    cleaned = (raw_text or "").strip()
+    labels = (FINAL_ANSWER_CORRECT, FINAL_ANSWER_INSUFFICIENT)
+    matched_labels = [label for label in labels if label in cleaned]
+    if len(matched_labels) != 1:
+        raise OpenAIServiceError("OpenAI API가 유효한 정답 판정값을 반환하지 않았습니다.")
+    return matched_labels[0]
+
+
 def _compact(text):
     return re.sub(r"\s+", "", text or "").lower()
 
@@ -177,6 +218,8 @@ def _normalize_token(token):
     for suffix in (
         "이었다",
         "였다",
+        "인가요",
+        "나요",
         "에서",
         "으로",
         "에게",
@@ -302,19 +345,7 @@ def _format_question_criteria(question_criteria):
 
 
 def classify_question(scenario, answer_text, question_text, question_criteria=None):
-    criteria_label = _classify_question_with_criteria(question_text, question_criteria)
-    if criteria_label:
-        return criteria_label
-
-    if not settings.OPENAI_API_KEY:
-        return _classify_question_locally(question_text, question_criteria)
-
-    try:
-        from openai import OpenAI
-    except ImportError:
-        return _classify_question_locally(question_text, question_criteria)
-
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    client = _get_openai_client()
 
     prompt = f"""
 너는 바다거북스프 게임의 질문 판정기다.
@@ -350,6 +381,7 @@ def classify_question(scenario, answer_text, question_text, question_criteria=No
     try:
         response = client.responses.create(
             model=settings.OPENAI_CLASSIFIER_MODEL,
+            reasoning={"effort": settings.OPENAI_REASONING_EFFORT},
             input=[
                 {
                     "role": "system",
@@ -370,13 +402,15 @@ def classify_question(scenario, answer_text, question_text, question_criteria=No
                     ],
                 },
             ],
-            max_output_tokens=300,
+            max_output_tokens=settings.OPENAI_QUESTION_MAX_OUTPUT_TOKENS,
         )
 
-        return _normalize_label(getattr(response, "output_text", ""))
-    except Exception as e:
-        print("OPENAI ERROR:", e)
-        return _classify_question_locally(question_text, question_criteria)
+        return _validate_question_api_label(getattr(response, "output_text", ""))
+    except OpenAIServiceError:
+        raise
+    except Exception as exc:
+        logger.exception("OpenAI question classification failed")
+        raise OpenAIServiceError("질문 판정 중 OpenAI API 호출에 실패했습니다.") from exc
 
 
 def _extract_json_object(text):
@@ -456,15 +490,7 @@ def _generate_puzzle_criteria_locally(scenario, answer_text):
 
 
 def generate_puzzle_criteria(scenario, answer_text):
-    if not settings.OPENAI_API_KEY:
-        return _generate_puzzle_criteria_locally(scenario, answer_text)
-
-    try:
-        from openai import OpenAI
-    except ImportError:
-        return _generate_puzzle_criteria_locally(scenario, answer_text)
-
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    client = _get_openai_client()
     prompt = f"""
 너는 바다거북스프 게임의 문제 설계 보조자다.
 아래 시나리오와 정답을 바탕으로 게임 진행자가 질문 판정을 안정적으로 할 수 있는 기준을 생성한다.
@@ -499,6 +525,7 @@ JSON 형식:
     try:
         response = client.responses.create(
             model=settings.OPENAI_CLASSIFIER_MODEL,
+            reasoning={"effort": settings.OPENAI_REASONING_EFFORT},
             input=[
                 {
                     "role": "system",
@@ -511,15 +538,16 @@ JSON 형식:
                 },
                 {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
             ],
-            max_output_tokens=1200,
+            max_output_tokens=settings.OPENAI_CRITERIA_MAX_OUTPUT_TOKENS,
         )
         generated = _normalize_generated_criteria(_extract_json_object(getattr(response, "output_text", "")))
         if any(generated.values()):
             return generated
-    except Exception as e:
-        print("OPENAI CRITERIA ERROR:", e)
+    except Exception as exc:
+        logger.exception("OpenAI puzzle criteria generation failed")
+        raise OpenAIServiceError("판정 기준 생성 중 OpenAI API 호출에 실패했습니다.") from exc
 
-    return _generate_puzzle_criteria_locally(scenario, answer_text)
+    raise OpenAIServiceError("OpenAI API가 유효한 판정 기준을 반환하지 않았습니다.")
 
 
 def classify_final_answer(scenario, answer_text, submitted_answer, answer_checkpoints=None):
@@ -528,15 +556,7 @@ def classify_final_answer(scenario, answer_text, submitted_answer, answer_checkp
 
     checkpoints = _split_checkpoints(answer_checkpoints)
 
-    if not settings.OPENAI_API_KEY:
-        return _classify_final_answer_locally(submitted_answer, checkpoints)
-
-    try:
-        from openai import OpenAI
-    except ImportError:
-        return _classify_final_answer_locally(submitted_answer, checkpoints)
-
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    client = _get_openai_client()
 
     prompt = f"""
 너는 바다거북스프 게임의 정답 채점자다.
@@ -569,6 +589,7 @@ def classify_final_answer(scenario, answer_text, submitted_answer, answer_checkp
     try:
         response = client.responses.create(
             model=settings.OPENAI_CLASSIFIER_MODEL,
+            reasoning={"effort": settings.OPENAI_REASONING_EFFORT},
             input=[
                 {
                     "role": "system",
@@ -589,9 +610,11 @@ def classify_final_answer(scenario, answer_text, submitted_answer, answer_checkp
                     ],
                 },
             ],
-            max_output_tokens=60,
+            max_output_tokens=settings.OPENAI_FINAL_ANSWER_MAX_OUTPUT_TOKENS,
         )
-        return _normalize_final_answer_label(getattr(response, "output_text", ""))
-    except Exception as e:
-        print("OPENAI FINAL ANSWER ERROR:", e)
-        return _classify_final_answer_locally(submitted_answer, checkpoints)
+        return _validate_final_answer_api_label(getattr(response, "output_text", ""))
+    except OpenAIServiceError:
+        raise
+    except Exception as exc:
+        logger.exception("OpenAI final answer classification failed")
+        raise OpenAIServiceError("정답 판정 중 OpenAI API 호출에 실패했습니다.") from exc

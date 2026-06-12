@@ -1,13 +1,21 @@
+from unittest.mock import patch
+
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import GameSession, Puzzle, QuestionTestCase
+from .models import GameSession, Puzzle, QuestionLog, QuestionTestCase
 from .services import (
     FINAL_ANSWER_CORRECT,
     FINAL_ANSWER_INSUFFICIENT,
     _classify_final_answer_locally,
     _classify_question_locally,
+    _classify_question_with_criteria,
+    _generate_puzzle_criteria_locally,
     _normalize_label,
+    _validate_final_answer_api_label,
+    _validate_question_api_label,
+    OpenAIServiceError,
+    classify_final_answer,
     classify_question,
     generate_puzzle_criteria,
 )
@@ -18,6 +26,12 @@ class QuestionClassifierTests(TestCase):
         self.assertEqual(_normalize_label("맞습니다."), "맞습니다")
         self.assertEqual(_normalize_label("결과: 관계없습니다"), "관계없습니다")
         self.assertEqual(_normalize_label("unknown"), "질문이 모호합니다")
+
+    def test_invalid_openai_labels_raise_service_error(self):
+        with self.assertRaises(OpenAIServiceError):
+            _validate_question_api_label("설명만 있는 응답")
+        with self.assertRaises(OpenAIServiceError):
+            _validate_final_answer_api_label("판단할 수 없음")
 
     def test_local_classifier_returns_distinct_labels_for_dev_testing(self):
         cases = {
@@ -71,26 +85,16 @@ class QuestionClassifierTests(TestCase):
         }
 
         self.assertEqual(
-            classify_question(
-                scenario="한 남자가 식당에서 수프를 먹고 집에 돌아온 뒤 자살했다.",
-                answer_text="그는 식당의 수프를 통해 과거의 진실을 깨달았다.",
-                question_text="남자는 원래 자살 계획이 있었나요?",
-                question_criteria=criteria,
-            ),
+            _classify_question_with_criteria("남자는 원래 자살 계획이 있었나요?", criteria),
             "아닙니다",
         )
         self.assertEqual(
-            classify_question(
-                scenario="한 남자가 식당에서 수프를 먹고 집에 돌아온 뒤 자살했다.",
-                answer_text="그는 식당의 수프를 통해 과거의 진실을 깨달았다.",
-                question_text="남자는 식당에서 수프를 먹었나요?",
-                question_criteria=criteria,
-            ),
+            _classify_question_with_criteria("남자는 집에 돌아온 뒤 자살했나요?", criteria),
             "맞습니다",
         )
 
     def test_generate_puzzle_criteria_local_fallback(self):
-        criteria = generate_puzzle_criteria(
+        criteria = _generate_puzzle_criteria_locally(
             "한 남자가 식당에서 바다거북스프를 먹고 집에 돌아온 뒤 자살했다.",
             "그는 과거 조난 상황에서 먹었던 수프가 인육 수프였다는 사실을 깨달았다.",
         )
@@ -111,12 +115,7 @@ class QuestionClassifierTests(TestCase):
             expected_label="맞습니다",
         )
 
-        answer_label = classify_question(
-            scenario=puzzle.scenario,
-            answer_text=puzzle.answer_text,
-            question_text=test_case.question_text,
-            question_criteria=puzzle.get_question_criteria(),
-        )
+        answer_label = _classify_question_with_criteria(test_case.question_text, puzzle.get_question_criteria())
         test_case.mark_result(answer_label)
 
         self.assertEqual(test_case.last_answer_label, "맞습니다")
@@ -125,17 +124,18 @@ class QuestionClassifierTests(TestCase):
 
 
 class GameFlowTests(TestCase):
-    def test_result_page_redirects_until_session_is_cleared(self):
-        puzzle = Puzzle.objects.create(
+    def setUp(self):
+        self.puzzle = Puzzle.objects.create(
             title="테스트 문제",
             scenario="남자가 식당에서 수프를 먹고 집에 돌아갔다.",
             answer_text="남자는 수프를 먹고 과거의 진실을 깨달았다.",
         )
-        game_session = GameSession.objects.create(puzzle=puzzle, status=GameSession.STATUS_PLAYING)
+        self.game_session = GameSession.objects.create(puzzle=self.puzzle, status=GameSession.STATUS_PLAYING)
 
-        response = self.client.get(reverse("game:result", args=[game_session.id]))
+    def test_result_page_redirects_until_session_is_cleared(self):
+        response = self.client.get(reverse("game:result", args=[self.game_session.id]))
 
-        self.assertRedirects(response, reverse("game:play", args=[game_session.id]))
+        self.assertRedirects(response, reverse("game:play", args=[self.game_session.id]))
 
     def test_result_page_is_available_after_session_is_cleared(self):
         puzzle = Puzzle.objects.create(
@@ -149,3 +149,79 @@ class GameFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, puzzle.answer_text)
+
+    def test_duplicate_question_does_not_call_openai_twice(self):
+        QuestionLog.objects.create(
+            game_session=self.game_session,
+            question_text="남자는 수프를 먹었나요?",
+            answer_label="맞습니다",
+        )
+
+        with patch("game.views.classify_question") as classifier:
+            self.client.post(
+                reverse("game:ask_question", args=[self.game_session.id]),
+                {"question_text": "남자는 수프를 먹었나요?"},
+            )
+
+        classifier.assert_not_called()
+        self.assertEqual(self.game_session.question_logs.count(), 1)
+
+    def test_question_length_is_limited(self):
+        with patch("game.views.classify_question") as classifier:
+            self.client.post(
+                reverse("game:ask_question", args=[self.game_session.id]),
+                {"question_text": "가" * 501},
+            )
+
+        classifier.assert_not_called()
+        self.assertEqual(self.game_session.question_logs.count(), 0)
+
+    def test_openai_error_is_shown_without_creating_question_log(self):
+        with patch("game.views.classify_question", side_effect=OpenAIServiceError("API 호출 실패")):
+            response = self.client.post(
+                reverse("game:ask_question", args=[self.game_session.id]),
+                {"question_text": "남자는 수프를 먹었나요?"},
+                follow=True,
+            )
+
+        self.assertContains(response, "API 호출 실패")
+        self.assertEqual(self.game_session.question_logs.count(), 0)
+
+
+class OpenAIIntegrationTests(TestCase):
+    def test_openai_question_classifier_returns_expected_label(self):
+        with patch("game.services._classify_question_locally", side_effect=AssertionError("OpenAI API was not called.")):
+            response_label = classify_question(
+                scenario="남자가 식당에서 바다거북스프를 먹고 집에 돌아가 자살했다.",
+                answer_text="남자는 과거 조난 때 먹은 음식이 인육이었다는 사실을 식당의 수프 맛으로 깨달았다.",
+                question_text="남자는 식당에서 수프를 먹었나요?",
+            )
+
+        self.assertEqual(response_label, "맞습니다")
+
+    def test_openai_final_answer_classifier_returns_expected_label(self):
+        response_label = classify_final_answer(
+            scenario="남자가 식당에서 바다거북스프를 먹고 집에 돌아가 자살했다.",
+            answer_text="과거 조난 때 인육 수프를 먹었고, 식당의 진짜 바다거북스프 맛으로 진실을 깨달았다.",
+            answer_checkpoints=[
+                "과거 조난 상황에서 수프를 먹었다.",
+                "과거에 먹은 수프는 인육 수프였다.",
+                "식당의 진짜 바다거북스프 맛으로 진실을 깨달았다.",
+            ],
+            submitted_answer=(
+                "남자는 과거 조난 상황에서 수프를 먹었다. 과거에 먹은 수프는 인육 수프였다. "
+                "식당의 진짜 바다거북스프 맛으로 진실을 깨달았다."
+            ),
+        )
+
+        self.assertEqual(response_label, FINAL_ANSWER_CORRECT)
+
+    def test_openai_generates_puzzle_criteria(self):
+        criteria = generate_puzzle_criteria(
+            scenario="남자가 식당에서 바다거북스프를 먹고 집에 돌아가 자살했다.",
+            answer_text="과거 조난 때 인육 수프를 먹었고, 식당의 진짜 바다거북스프 맛으로 진실을 깨달았다.",
+        )
+
+        self.assertTrue(criteria["answer_checkpoints"])
+        self.assertTrue(criteria["question_yes_facts"])
+        self.assertTrue(criteria["question_no_facts"])

@@ -12,11 +12,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if load_dotenv:
     load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = "django-insecure-change-this-in-production"
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-change-this-in-production")
 
-DEBUG = True
+DEBUG = os.getenv("DJANGO_DEBUG", "True").lower() == "true"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",") if host.strip()]
+SECURE_SSL_REDIRECT = os.getenv("DJANGO_SECURE_SSL_REDIRECT", "False").lower() == "true"
+SESSION_COOKIE_SECURE = os.getenv("DJANGO_SESSION_COOKIE_SECURE", "False").lower() == "true"
+CSRF_COOKIE_SECURE = os.getenv("DJANGO_CSRF_COOKIE_SECURE", "False").lower() == "true"
+SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_SECURE_HSTS_SECONDS", "0"))
 
 
 INSTALLED_APPS = [
@@ -82,3 +86,26 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_CLASSIFIER_MODEL = os.getenv("OPENAI_CLASSIFIER_MODEL", "gpt-5-mini")
+OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
+OPENAI_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "2"))
+OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "low")
+OPENAI_QUESTION_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_QUESTION_MAX_OUTPUT_TOKENS", "1000"))
+OPENAI_FINAL_ANSWER_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_FINAL_ANSWER_MAX_OUTPUT_TOKENS", "1000"))
+OPENAI_CRITERIA_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_CRITERIA_MAX_OUTPUT_TOKENS", "5000"))
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "loggers": {
+        "game.services": {
+            "handlers": ["console"],
+            "level": os.getenv("GAME_LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+    },
+}

@@ -475,7 +475,7 @@
         <div class="composer">
             <form class="composer-form" method="post" action="{% url 'game:ask_question' game_session.id %}">
                 {% csrf_token %}
-                <textarea name="question_text" placeholder="진행자에게 질문하기 예: 남자는 식당에서 수프를 먹었나요?" required autofocus></textarea>
+                <textarea name="question_text" maxlength="500" placeholder="진행자에게 질문하기 예: 남자는 식당에서 수프를 먹었나요?" required autofocus></textarea>
                 <button class="button" type="submit">보내기</button>
             </form>
         </div>
@@ -530,7 +530,7 @@
 
         <form method="post" action="{% url 'game:submit_final_answer' game_session.id %}">
             {% csrf_token %}
-            <textarea name="submitted_answer" placeholder="예: 남자는 과거 조난 때 먹은 음식의 정체를 깨달았다." required></textarea>
+            <textarea name="submitted_answer" maxlength="2000" placeholder="예: 남자는 과거 조난 때 먹은 음식의 정체를 깨달았다." required></textarea>
             <div class="answer-dialog-actions">
                 <button class="button secondary" type="button" data-answer-close>계속 추리하기</button>
                 <button class="button" type="submit">정답 제출</button>
@@ -547,6 +547,7 @@
         const answerModal = document.querySelector("[data-answer-modal]");
         const answerOpenButton = document.querySelector("[data-answer-open]");
         const answerCloseButton = document.querySelector("[data-answer-close]");
+        const forms = document.querySelectorAll("form");
 
         if (!questionInput || !questionForm) {
             return;
@@ -557,6 +558,16 @@
         }
 
         questionInput.focus();
+
+        forms.forEach(function (form) {
+            form.addEventListener("submit", function () {
+                const submitButton = form.querySelector('button[type="submit"]');
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = "처리 중...";
+                }
+            });
+        });
 
         questionInput.addEventListener("keydown", function (event) {
             if (event.key !== "Enter" || event.shiftKey) {

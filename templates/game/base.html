@@ -171,6 +171,34 @@
             line-height: 1.5;
         }
 
+        .messages {
+            display: grid;
+            gap: 8px;
+            margin: 0 0 16px;
+            padding: 0;
+            list-style: none;
+        }
+
+        .message {
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #ffffff;
+            line-height: 1.5;
+        }
+
+        .message.error {
+            border-color: #fecaca;
+            background: #fef2f2;
+            color: #991b1b;
+        }
+
+        .message.warning {
+            border-color: #fed7aa;
+            background: #fff7ed;
+            color: #9a3412;
+        }
+
         @media (max-width: 760px) {
             .app-shell {
                 width: min(100% - 24px, 1120px);
@@ -196,6 +224,14 @@
             </a>
             {% block topbar_action %}{% endblock %}
         </nav>
+
+        {% if messages %}
+            <ul class="messages" aria-live="polite">
+                {% for message in messages %}
+                    <li class="message {{ message.tags }}">{{ message }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
 
         {% block content %}{% endblock %}
     </main>
