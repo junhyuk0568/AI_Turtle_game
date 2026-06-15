@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 
 from .models import GameSession, Puzzle, QuestionLog
@@ -43,7 +44,21 @@ def _get_hint_data(game_session):
 
 def home(request):
     puzzles = Puzzle.objects.filter(is_active=True)
-    return render(request, "game/home.html", {"puzzles": puzzles})
+    active_games = []
+    if request.user.is_authenticated:
+        active_games = GameSession.objects.filter(
+            user=request.user,
+            status=GameSession.STATUS_PLAYING,
+            puzzle__is_active=True,
+        ).select_related("puzzle").annotate(question_count_value=Count("question_logs"))
+    elif request.session.session_key:
+        active_games = GameSession.objects.filter(
+            session_key=request.session.session_key,
+            status=GameSession.STATUS_PLAYING,
+            puzzle__is_active=True,
+        ).select_related("puzzle").annotate(question_count_value=Count("question_logs"))
+
+    return render(request, "game/home.html", {"puzzles": puzzles, "active_games": active_games})
 
 
 def start_game(request, puzzle_id):
@@ -52,12 +67,23 @@ def start_game(request, puzzle_id):
     if not request.session.session_key:
         request.session.create()
 
-    game_session = GameSession.objects.create(
-        puzzle=puzzle,
-        user=request.user if request.user.is_authenticated else None,
-        session_key=request.session.session_key or "",
-        status=GameSession.STATUS_PLAYING,
-    )
+    lookup = {
+        "puzzle": puzzle,
+        "status": GameSession.STATUS_PLAYING,
+    }
+    if request.user.is_authenticated:
+        lookup["user"] = request.user
+    else:
+        lookup["session_key"] = request.session.session_key or ""
+
+    game_session = GameSession.objects.filter(**lookup).first()
+    if game_session is None:
+        game_session = GameSession.objects.create(
+            puzzle=puzzle,
+            user=request.user if request.user.is_authenticated else None,
+            session_key=request.session.session_key or "",
+            status=GameSession.STATUS_PLAYING,
+        )
     return redirect("game:play", game_id=game_session.id)
 
 
@@ -175,6 +201,7 @@ def result_view(request, game_id):
         return redirect("game:play", game_id=game_session.id)
 
     question_count = game_session.question_logs.count()
+    game_session.question_count_value = question_count
     return render(
         request,
         "game/result.html",
@@ -182,5 +209,6 @@ def result_view(request, game_id):
             "game_session": game_session,
             "puzzle": game_session.puzzle,
             "question_count": question_count,
+            "score": game_session.score,
         },
     )

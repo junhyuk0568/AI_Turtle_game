@@ -57,6 +57,10 @@ def _split_lines(text):
 
 
 class GameSession(models.Model):
+    SCORE_START = 1000
+    SCORE_PER_QUESTION = 20
+    SCORE_PER_HINT = 150
+
     STATUS_PLAYING = "playing"
     STATUS_CLEARED = "cleared"
     STATUS_CHOICES = [
@@ -90,6 +94,14 @@ class GameSession(models.Model):
         self.submitted_answer = submitted_answer
         self.cleared_at = timezone.now()
         self.save(update_fields=["status", "submitted_answer", "cleared_at"])
+
+    @property
+    def score(self):
+        question_count = getattr(self, "question_count_value", None)
+        if question_count is None:
+            question_count = self.question_logs.count()
+        penalty = question_count * self.SCORE_PER_QUESTION + self.hint_used_count * self.SCORE_PER_HINT
+        return max(0, self.SCORE_START - penalty)
 
 
 class QuestionLog(models.Model):
@@ -139,3 +151,20 @@ class QuestionTestCase(models.Model):
         self.last_passed = answer_label == self.expected_label
         self.last_run_at = timezone.now()
         self.save(update_fields=["last_answer_label", "last_passed", "last_run_at"])
+
+
+class OpenAIUsageLog(models.Model):
+    operation = models.CharField(max_length=40)
+    model = models.CharField(max_length=100)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    total_tokens = models.PositiveIntegerField(default=0)
+    success = models.BooleanField(default=True)
+    error_message = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.operation} - {self.total_tokens} tokens"

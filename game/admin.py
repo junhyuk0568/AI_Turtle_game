@@ -1,8 +1,9 @@
 from django.contrib import admin, messages
+from django.db.models import Count, Q
 from django.shortcuts import redirect
 from django.urls import path, reverse
 
-from .models import GameSession, Puzzle, QuestionLog, QuestionTestCase
+from .models import GameSession, OpenAIUsageLog, Puzzle, QuestionLog, QuestionTestCase
 from .services import OpenAIServiceError, classify_question, generate_puzzle_criteria
 
 
@@ -23,7 +24,7 @@ class QuestionTestCaseInline(admin.TabularInline):
 @admin.register(Puzzle)
 class PuzzleAdmin(admin.ModelAdmin):
     change_form_template = "admin/game/puzzle/change_form.html"
-    list_display = ("title", "is_active", "created_at", "updated_at")
+    list_display = ("title", "criteria_ready", "question_test_results", "is_active", "created_at", "updated_at")
     search_fields = (
         "title",
         "scenario",
@@ -53,6 +54,28 @@ class PuzzleAdmin(admin.ModelAdmin):
         ),
         ("힌트", {"fields": ("hint1", "hint2", "hint3")}),
     )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(
+            test_count=Count("question_test_cases"),
+            passed_test_count=Count("question_test_cases", filter=Q(question_test_cases__last_passed=True)),
+        )
+
+    @admin.display(description="판정 기준", boolean=True)
+    def criteria_ready(self, obj):
+        return all(
+            (
+                obj.answer_checkpoints.strip(),
+                obj.question_yes_facts.strip(),
+                obj.question_no_facts.strip(),
+                obj.question_irrelevant_facts.strip(),
+                obj.question_ambiguous_examples.strip(),
+            )
+        )
+
+    @admin.display(description="질문 테스트")
+    def question_test_results(self, obj):
+        return f"{obj.passed_test_count}/{obj.test_count}"
 
     def get_urls(self):
         urls = super().get_urls()
@@ -164,9 +187,20 @@ class PuzzleAdmin(admin.ModelAdmin):
 
 @admin.register(GameSession)
 class GameSessionAdmin(admin.ModelAdmin):
-    list_display = ("id", "puzzle", "user", "session_key", "hint_used_count", "status", "created_at")
+    list_display = ("id", "puzzle", "user", "question_count", "hint_used_count", "score", "status", "created_at")
     search_fields = ("puzzle__title", "user__username", "session_key")
     list_filter = ("status", "created_at", "hint_used_count")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(question_count_value=Count("question_logs"))
+
+    @admin.display(description="질문 수")
+    def question_count(self, obj):
+        return obj.question_count_value
+
+    @admin.display(description="점수")
+    def score(self, obj):
+        return obj.score
 
 
 @admin.register(QuestionLog)
@@ -217,3 +251,32 @@ class QuestionTestCaseAdmin(admin.ModelAdmin):
                 passed_count += 1
 
         self.message_user(request, f"테스트 질문 {passed_count}/{total_count}개가 통과했습니다.")
+
+
+@admin.register(OpenAIUsageLog)
+class OpenAIUsageLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "operation",
+        "model",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "success",
+        "created_at",
+    )
+    list_filter = ("operation", "model", "success", "created_at")
+    search_fields = ("operation", "model", "error_message")
+    readonly_fields = (
+        "operation",
+        "model",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "success",
+        "error_message",
+        "created_at",
+    )
+
+    def has_add_permission(self, request):
+        return False

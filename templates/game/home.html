@@ -153,6 +153,26 @@
     </aside>
 </header>
 
+{% if active_games %}
+    <section aria-label="진행 중인 게임" style="margin-bottom: 24px;">
+        <p class="eyebrow">진행 중인 게임</p>
+        <div class="puzzle-grid">
+            {% for game in active_games %}
+                <article class="puzzle-card">
+                    <div>
+                        <h2>{{ game.puzzle.title }}</h2>
+                        <p class="scenario-preview">{{ game.puzzle.scenario }}</p>
+                    </div>
+                    <div class="card-footer">
+                        <span class="meta">질문 {{ game.question_count_value }}개 · 힌트 {{ game.hint_used_count }}개</span>
+                        <a class="button" href="{% url 'game:play' game.id %}">이어하기</a>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+{% endif %}
+
 {% if puzzles %}
     <section class="puzzle-grid" aria-label="문제 목록">
         {% for puzzle in puzzles %}

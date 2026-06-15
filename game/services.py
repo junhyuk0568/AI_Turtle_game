@@ -12,6 +12,27 @@ class OpenAIServiceError(Exception):
     """Raised when the required OpenAI service cannot produce a result."""
 
 
+def _record_openai_usage(operation, response=None, error_message=""):
+    try:
+        from .models import OpenAIUsageLog
+
+        usage = getattr(response, "usage", None)
+        safe_error_message = error_message
+        if settings.OPENAI_API_KEY:
+            safe_error_message = safe_error_message.replace(settings.OPENAI_API_KEY, "[redacted]")
+        OpenAIUsageLog.objects.create(
+            operation=operation,
+            model=settings.OPENAI_CLASSIFIER_MODEL,
+            input_tokens=getattr(usage, "input_tokens", 0) or 0,
+            output_tokens=getattr(usage, "output_tokens", 0) or 0,
+            total_tokens=getattr(usage, "total_tokens", 0) or 0,
+            success=not safe_error_message,
+            error_message=safe_error_message[:255],
+        )
+    except Exception:
+        logger.exception("OpenAI usage logging failed")
+
+
 def _get_openai_client():
     if not settings.OPENAI_API_KEY:
         raise OpenAIServiceError("OpenAI API 키가 설정되지 않았습니다.")
@@ -405,11 +426,15 @@ def classify_question(scenario, answer_text, question_text, question_criteria=No
             max_output_tokens=settings.OPENAI_QUESTION_MAX_OUTPUT_TOKENS,
         )
 
-        return _validate_question_api_label(getattr(response, "output_text", ""))
-    except OpenAIServiceError:
+        result = _validate_question_api_label(getattr(response, "output_text", ""))
+        _record_openai_usage("question_classification", response=response)
+        return result
+    except OpenAIServiceError as exc:
+        _record_openai_usage("question_classification", error_message=str(exc))
         raise
     except Exception as exc:
         logger.exception("OpenAI question classification failed")
+        _record_openai_usage("question_classification", error_message=str(exc))
         raise OpenAIServiceError("질문 판정 중 OpenAI API 호출에 실패했습니다.") from exc
 
 
@@ -542,11 +567,14 @@ JSON 형식:
         )
         generated = _normalize_generated_criteria(_extract_json_object(getattr(response, "output_text", "")))
         if any(generated.values()):
+            _record_openai_usage("criteria_generation", response=response)
             return generated
     except Exception as exc:
         logger.exception("OpenAI puzzle criteria generation failed")
+        _record_openai_usage("criteria_generation", error_message=str(exc))
         raise OpenAIServiceError("판정 기준 생성 중 OpenAI API 호출에 실패했습니다.") from exc
 
+    _record_openai_usage("criteria_generation", error_message="Invalid criteria response")
     raise OpenAIServiceError("OpenAI API가 유효한 판정 기준을 반환하지 않았습니다.")
 
 
@@ -612,9 +640,13 @@ def classify_final_answer(scenario, answer_text, submitted_answer, answer_checkp
             ],
             max_output_tokens=settings.OPENAI_FINAL_ANSWER_MAX_OUTPUT_TOKENS,
         )
-        return _validate_final_answer_api_label(getattr(response, "output_text", ""))
-    except OpenAIServiceError:
+        result = _validate_final_answer_api_label(getattr(response, "output_text", ""))
+        _record_openai_usage("final_answer_classification", response=response)
+        return result
+    except OpenAIServiceError as exc:
+        _record_openai_usage("final_answer_classification", error_message=str(exc))
         raise
     except Exception as exc:
         logger.exception("OpenAI final answer classification failed")
+        _record_openai_usage("final_answer_classification", error_message=str(exc))
         raise OpenAIServiceError("정답 판정 중 OpenAI API 호출에 실패했습니다.") from exc

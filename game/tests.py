@@ -1,9 +1,9 @@
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from .models import GameSession, Puzzle, QuestionLog, QuestionTestCase
+from .models import GameSession, OpenAIUsageLog, Puzzle, QuestionLog, QuestionTestCase
 from .services import (
     FINAL_ANSWER_CORRECT,
     FINAL_ANSWER_INSUFFICIENT,
@@ -12,6 +12,7 @@ from .services import (
     _classify_question_with_criteria,
     _generate_puzzle_criteria_locally,
     _normalize_label,
+    _record_openai_usage,
     _validate_final_answer_api_label,
     _validate_question_api_label,
     OpenAIServiceError,
@@ -149,6 +150,7 @@ class GameFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, puzzle.answer_text)
+        self.assertContains(response, "1000")
 
     def test_duplicate_question_does_not_call_openai_twice(self):
         QuestionLog.objects.create(
@@ -186,6 +188,60 @@ class GameFlowTests(TestCase):
 
         self.assertContains(response, "API 호출 실패")
         self.assertEqual(self.game_session.question_logs.count(), 0)
+
+    def test_start_game_resumes_existing_session(self):
+        session = self.client.session
+        session.save()
+        self.game_session.session_key = session.session_key
+        self.game_session.save(update_fields=["session_key"])
+
+        response = self.client.get(reverse("game:start_game", args=[self.puzzle.id]))
+
+        self.assertRedirects(response, reverse("game:play", args=[self.game_session.id]))
+        self.assertEqual(GameSession.objects.filter(puzzle=self.puzzle).count(), 1)
+
+    def test_home_shows_active_game(self):
+        session = self.client.session
+        session.save()
+        self.game_session.session_key = session.session_key
+        self.game_session.save(update_fields=["session_key"])
+
+        response = self.client.get(reverse("game:home"))
+
+        self.assertContains(response, "이어하기")
+        self.assertContains(response, self.puzzle.title)
+
+    def test_score_penalizes_questions_and_hints(self):
+        self.game_session.hint_used_count = 2
+        self.game_session.save(update_fields=["hint_used_count"])
+        QuestionLog.objects.bulk_create(
+            [
+                QuestionLog(game_session=self.game_session, question_text="질문 1", answer_label="맞습니다"),
+                QuestionLog(game_session=self.game_session, question_text="질문 2", answer_label="아닙니다"),
+            ]
+        )
+
+        self.assertEqual(self.game_session.score, 660)
+
+
+class OpenAIUsageLogTests(TestCase):
+    def test_records_token_usage_without_prompt_content(self):
+        usage = type("Usage", (), {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15})()
+        response = type("Response", (), {"usage": usage})()
+
+        _record_openai_usage("question_classification", response=response)
+
+        log = OpenAIUsageLog.objects.get()
+        self.assertEqual(log.input_tokens, 10)
+        self.assertEqual(log.output_tokens, 5)
+        self.assertEqual(log.total_tokens, 15)
+        self.assertTrue(log.success)
+
+    @override_settings(OPENAI_API_KEY="secret-test-key")
+    def test_redacts_api_key_from_error_log(self):
+        _record_openai_usage("question_classification", error_message="failed with secret-test-key")
+
+        self.assertEqual(OpenAIUsageLog.objects.get().error_message, "failed with [redacted]")
 
 
 class OpenAIIntegrationTests(TestCase):
