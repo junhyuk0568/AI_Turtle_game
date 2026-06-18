@@ -56,6 +56,10 @@ python manage.py test
 
 저장소의 `Settings > Secrets and variables > Actions`에서 `OPENAI_API_KEY` 저장소 비밀값을 등록해야 자동 테스트가 통과합니다.
 
+## 배포
+
+운영 배포 전에는 `.env.production.example`과 `DEPLOYMENT.md`를 확인하세요.
+
 ## 운영 전 확인
 
 - `DJANGO_SECRET_KEY`를 안전한 값으로 변경
