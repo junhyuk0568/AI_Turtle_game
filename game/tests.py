@@ -453,6 +453,79 @@ class GameFlowTests(TestCase):
         self.assertEqual(self.game_session.score, 660)
 
 
+@override_settings(AI_CALLS_PER_MINUTE=0)
+class AsyncQuestionTests(TestCase):
+    """The play page sends questions with fetch and Accept: application/json."""
+
+    def setUp(self):
+        self.puzzle = Puzzle.objects.create(title="비동기 문제", scenario="s", answer_text="a")
+        self.game_session = _owned_game(self.client, puzzle=self.puzzle)
+        self.url = reverse("game:ask_question", args=[self.game_session.id])
+
+    def _ask(self, question, judgement=None, **patch_kwargs):
+        patch_kwargs.setdefault("return_value", judgement or QuestionJudgement(label=LABEL_YES))
+        with patch("game.views.classify_question", **patch_kwargs) as classifier:
+            response = self.client.post(self.url, {"question_text": question}, HTTP_ACCEPT="application/json")
+        return response, classifier
+
+    def test_success_returns_rendered_exchange(self):
+        response, _ = self._ask("남자는 수프를 먹었나요?")
+
+        data = response.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["question_count"], 1)
+        self.assertIn("남자는 수프를 먹었나요?", data["html"])
+        self.assertIn("그렇습니다.", data["html"])
+        self.assertIn("판정이 이상해요", data["html"])
+        self.assertIn("csrfmiddlewaretoken", data["html"])
+        self.assertEqual(self.game_session.question_logs.count(), 1)
+
+    def test_question_text_is_escaped_in_html(self):
+        response, _ = self._ask("<script>alert(1)</script>")
+
+        html = response.json()["html"]
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertIn("&lt;script&gt;", html)
+
+    def test_errors_come_back_as_messages_without_logs(self):
+        QuestionLog.objects.create(game_session=self.game_session, question_text="중복", answer_label=LABEL_NO)
+        cases = [
+            ("중복", {}, "이미 같은 질문을 했습니다."),
+            ("", {}, "질문을 입력해 주세요."),
+            ("가" * 501, {}, "500자 이하"),
+            ("새 질문", {"side_effect": AIRefusalError(REFUSAL_MESSAGE)}, REFUSAL_MESSAGE),
+        ]
+        for question, patch_kwargs, message in cases:
+            with self.subTest(question=question[:10]):
+                response, _ = self._ask(question, **patch_kwargs)
+                data = response.json()
+                self.assertFalse(data["ok"])
+                self.assertIn(message, data["message"])
+        self.assertEqual(self.game_session.question_logs.count(), 1)
+
+    def test_errors_do_not_leave_flash_messages_for_next_page(self):
+        self._ask("", None)
+
+        response = self.client.get(reverse("game:play", args=[self.game_session.id]))
+
+        self.assertNotContains(response, "질문을 입력해 주세요.")
+
+    def test_cleared_game_returns_redirect_target(self):
+        self.game_session.status = GameSession.STATUS_CLEARED
+        self.game_session.save(update_fields=["status"])
+
+        response, classifier = self._ask("질문")
+
+        classifier.assert_not_called()
+        self.assertEqual(response.json()["redirect"], reverse("game:result", args=[self.game_session.id]))
+
+    def test_play_page_marks_the_composer_for_async_submit(self):
+        response = self.client.get(reverse("game:play", args=[self.game_session.id]))
+
+        self.assertContains(response, "data-async-question")
+        self.assertContains(response, "data-composer-error")
+
+
 class HintTests(TestCase):
     def setUp(self):
         self.puzzle = Puzzle.objects.create(

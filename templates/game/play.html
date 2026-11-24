@@ -207,6 +207,57 @@
         background: #ffffff;
     }
 
+    .composer-error {
+        margin: 0 0 10px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: #fff7ed;
+        color: #9a3412;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.5;
+    }
+
+    .message-bubble.pending {
+        display: inline-flex;
+        gap: 5px;
+        align-items: center;
+        min-height: 40px;
+    }
+
+    .pending-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--muted);
+        animation: pending-bounce 1.2s infinite ease-in-out;
+    }
+
+    .pending-dot:nth-child(2) {
+        animation-delay: 0.15s;
+    }
+
+    .pending-dot:nth-child(3) {
+        animation-delay: 0.3s;
+    }
+
+    @keyframes pending-bounce {
+        0%, 80%, 100% {
+            opacity: 0.3;
+            transform: translateY(0);
+        }
+        40% {
+            opacity: 1;
+            transform: translateY(-3px);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .pending-dot {
+            animation: none;
+        }
+    }
+
     .composer-form {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -447,13 +498,13 @@
                 <img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">
                 <div>
                     <p class="host-name">진행자</p>
-                    <p class="host-status">질문을 기다리는 중</p>
+                    <p class="host-status" data-host-status>질문을 기다리는 중</p>
                 </div>
             </div>
-            <span class="meta">질문 {{ question_logs|length }}개</span>
+            <span class="meta">질문 <span data-question-count>{{ question_logs|length }}</span>개</span>
         </div>
 
-        <div class="chat-body">
+        <div class="chat-body" aria-live="polite">
             <div class="message-row host">
                 <img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">
                 <div class="message-stack">
@@ -464,42 +515,13 @@
             </div>
 
             {% for log in question_logs %}
-                <div class="message-row user">
-                    <div class="message-stack">
-                        <span class="message-meta">나</span>
-                        <div class="message-bubble user">{{ log.question_text }}</div>
-                    </div>
-                    <img class="user-avatar" src="/static/game/img/user-image.png" alt="나">
-                </div>
-
-                <div class="message-row host answer-row">
-                    <img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">
-                    <div class="message-stack">
-                        <span class="message-meta">진행자 · {{ log.created_at|date:"H:i" }}</span>
-                        <div class="message-bubble host judgement {% if log.answer_label == "맞습니다" %}yes{% elif log.answer_label == "아닙니다" %}no{% elif log.answer_label == "관계없습니다" %}irrelevant{% else %}maybe{% endif %}">
-                            {% if log.answer_label == "맞습니다" %}
-                                그렇습니다.
-                            {% elif log.answer_label == "아닙니다" %}
-                                그렇지 않습니다.
-                            {% elif log.answer_label == "관계없습니다" %}
-                                관계없습니다.
-                            {% else %}
-                                그럴 수도 있습니다.
-                            {% endif %}
-                        </div>
-                        <form class="report-form" method="post" action="{% url 'game:report_judgement' game_session.id log.id %}">
-                            {% csrf_token %}
-                            <button class="report-button" type="submit" {% if log.reported_at %}disabled{% endif %}>
-                                {% if log.reported_at %}신고 접수됨{% else %}판정이 이상해요{% endif %}
-                            </button>
-                        </form>
-                    </div>
-                </div>
+                {% include "game/_question_exchange.html" %}
             {% endfor %}
         </div>
 
         <div class="composer">
-            <form class="composer-form" method="post" action="{% url 'game:ask_question' game_session.id %}">
+            <p class="composer-error" data-composer-error role="alert" hidden></p>
+            <form class="composer-form" method="post" action="{% url 'game:ask_question' game_session.id %}" data-async-question>
                 {% csrf_token %}
                 <textarea name="question_text" maxlength="500" placeholder="진행자에게 질문하기 예: 남자는 식당에서 수프를 먹었나요?" required autofocus></textarea>
                 <button class="button" type="submit">보내기</button>
@@ -592,6 +614,9 @@
         questionInput.focus();
 
         forms.forEach(function (form) {
+            if (form.hasAttribute("data-async-question")) {
+                return;
+            }
             form.addEventListener("submit", function () {
                 const submitButton = form.querySelector('button[type="submit"]');
                 if (submitButton) {
@@ -599,6 +624,109 @@
                     submitButton.textContent = "처리 중...";
                 }
             });
+        });
+
+        const questionButton = questionForm.querySelector('button[type="submit"]');
+        const composerError = document.querySelector("[data-composer-error]");
+        const questionCount = document.querySelector("[data-question-count]");
+        const hostStatus = document.querySelector("[data-host-status]");
+        const csrfToken = questionForm.querySelector('input[name="csrfmiddlewaretoken"]').value;
+        let questionPending = false;
+
+        function scrollChatToBottom() {
+            if (chatBody) {
+                chatBody.scrollTop = chatBody.scrollHeight;
+            }
+        }
+
+        function showComposerError(message) {
+            composerError.textContent = message;
+            composerError.hidden = !message;
+        }
+
+        function buildPendingRows(questionText) {
+            const fragment = document.createDocumentFragment();
+
+            const userRow = document.createElement("div");
+            userRow.className = "message-row user";
+            userRow.innerHTML =
+                '<div class="message-stack"><span class="message-meta">나</span>' +
+                '<div class="message-bubble user"></div></div>' +
+                '<img class="user-avatar" src="/static/game/img/user-image.png" alt="나">';
+            userRow.querySelector(".message-bubble").textContent = questionText;
+
+            const hostRow = document.createElement("div");
+            hostRow.className = "message-row host answer-row";
+            hostRow.innerHTML =
+                '<img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">' +
+                '<div class="message-stack"><span class="message-meta">진행자</span>' +
+                '<div class="message-bubble host pending" aria-label="진행자가 답변을 생각하는 중">' +
+                '<span class="pending-dot"></span><span class="pending-dot"></span><span class="pending-dot"></span>' +
+                "</div></div>";
+
+            fragment.appendChild(userRow);
+            fragment.appendChild(hostRow);
+            return [fragment, [userRow, hostRow]];
+        }
+
+        function setPending(isPending) {
+            questionPending = isPending;
+            questionInput.readOnly = isPending;
+            questionButton.disabled = isPending;
+            hostStatus.textContent = isPending ? "답변을 생각하는 중..." : "질문을 기다리는 중";
+        }
+
+        questionForm.addEventListener("submit", function (event) {
+            event.preventDefault();
+            const questionText = questionInput.value.trim();
+            if (!questionText || questionPending) {
+                return;
+            }
+
+            showComposerError("");
+            const [fragment, pendingRows] = buildPendingRows(questionText);
+            chatBody.appendChild(fragment);
+            scrollChatToBottom();
+            const formData = new FormData(questionForm);
+            questionInput.value = "";
+            setPending(true);
+
+            fetch(questionForm.action, {
+                method: "POST",
+                headers: { "Accept": "application/json", "X-CSRFToken": csrfToken },
+                body: formData,
+                credentials: "same-origin",
+            })
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error("HTTP " + response.status);
+                    }
+                    return response.json();
+                })
+                .then(function (data) {
+                    pendingRows.forEach(function (row) { row.remove(); });
+                    if (data.redirect) {
+                        window.location.href = data.redirect;
+                        return;
+                    }
+                    if (!data.ok) {
+                        questionInput.value = questionText;
+                        showComposerError(data.message);
+                        return;
+                    }
+                    chatBody.insertAdjacentHTML("beforeend", data.html);
+                    questionCount.textContent = data.question_count;
+                    scrollChatToBottom();
+                })
+                .catch(function () {
+                    pendingRows.forEach(function (row) { row.remove(); });
+                    questionInput.value = questionText;
+                    showComposerError("연결에 문제가 생겼어요. 잠시 후 다시 보내 주세요.");
+                })
+                .finally(function () {
+                    setPending(false);
+                    questionInput.focus();
+                });
         });
 
         questionInput.addEventListener("keydown", function (event) {

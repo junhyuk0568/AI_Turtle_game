@@ -44,8 +44,9 @@ B. Content (P2)
       puzzles with nothing to fill. Follow-up: "테스트 질문 실행" is still a GET link
       that triggers billed calls.
 C. Player experience (P2)
-  C1. Ask questions without a full page reload (fetch + pending bubble) so the
-      1-2 s judging wait feels like a chat.
+  C1. DONE: questions are sent with fetch (Accept: application/json); pending
+      "…" bubble + host status, server-rendered exchange partial, inline errors,
+      plain form POST fallback. Verified with one real Sonnet question in the browser.
   C2. Result page: replay of the player's questions and the host's replies.
   C3. Home: mark cleared puzzles; optional "give up and see the answer" in play.
 D. Deployment (P3)

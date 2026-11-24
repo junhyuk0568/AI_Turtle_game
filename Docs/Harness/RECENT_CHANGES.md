@@ -29,3 +29,10 @@ Files: game/admin.py, templates/admin/game/puzzle/generate_criteria_confirm.html
 game/fixtures/starter_puzzles.json, game/tests.py, README.md.
 Purpose: real starter title; never overwrite hand-edited criteria without consent.
 Verification: offline gate PASS (59 tests); admin confirm page and no-op path observed in browser.
+
+## 2026-11-24 - Questions without page reload (C1)
+Files: game/views.py, templates/game/play.html, templates/game/_question_exchange.html,
+game/tests.py, README.md.
+Purpose: chat-like question flow while Claude judges.
+Verification: offline gate PASS (65 tests); browser: pending bubble, reply, count update,
+duplicate error inline, no console errors (one billed Sonnet call).

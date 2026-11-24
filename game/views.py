@@ -2,8 +2,10 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
 from django.db.models import Count
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 
 from .models import GameSession, Puzzle, QuestionLog
@@ -166,49 +168,76 @@ def play_view(request, game_id):
     )
 
 
+def _wants_json(request):
+    return "application/json" in request.headers.get("Accept", "")
+
+
+def _judge_and_log_question(request, game_session, question_text):
+    """Return (QuestionLog, None, None) on success or (None, message, level) when refused."""
+    if not question_text:
+        return None, "질문을 입력해 주세요.", messages.WARNING
+    if len(question_text) > MAX_QUESTION_LENGTH:
+        return None, f"질문은 {MAX_QUESTION_LENGTH}자 이하로 입력해주세요.", messages.ERROR
+    if game_session.question_logs.filter(question_text=question_text).exists():
+        return None, "이미 같은 질문을 했습니다.", messages.WARNING
+    if game_session.question_logs.count() >= settings.MAX_QUESTIONS_PER_GAME:
+        return (
+            None,
+            f"이 게임에서 할 수 있는 질문 {settings.MAX_QUESTIONS_PER_GAME}개를 모두 사용했어요. 정답을 말해 보세요.",
+            messages.ERROR,
+        )
+    if not _consume_ai_call_quota(request):
+        return None, RATE_LIMIT_MESSAGE, messages.ERROR
+
+    recent_logs = game_session.question_logs.order_by("-created_at")[: settings.QUESTION_HISTORY_LIMIT]
+    history = [(log.question_text, log.answer_label) for log in reversed(list(recent_logs))]
+    puzzle = game_session.puzzle
+    try:
+        judgement = classify_question(
+            scenario=puzzle.scenario,
+            answer_text=puzzle.answer_text,
+            question_criteria=puzzle.get_question_criteria(),
+            answer_checkpoints=puzzle.get_answer_checkpoints(),
+            question_text=question_text,
+            history=history,
+        )
+    except AIServiceError as exc:
+        return None, str(exc), messages.ERROR
+
+    log = QuestionLog.objects.create(
+        game_session=game_session,
+        question_text=question_text,
+        answer_label=judgement.label,
+        revealed_checkpoints=judgement.revealed_checkpoints,
+    )
+    return log, None, None
+
+
 def ask_question(request, game_id):
     game_session = _get_game_session(request, game_id)
-    cleared_response = _redirect_if_cleared(game_session)
-    if cleared_response:
-        return cleared_response
+    wants_json = _wants_json(request)
+    if game_session.status == GameSession.STATUS_CLEARED:
+        result_url = reverse("game:result", args=[game_session.id])
+        if wants_json:
+            return JsonResponse({"ok": False, "message": "이미 끝난 게임입니다.", "redirect": result_url})
+        return redirect(result_url)
 
-    if request.method == "POST":
-        question_text = request.POST.get("question_text", "").strip()
-        if len(question_text) > MAX_QUESTION_LENGTH:
-            messages.error(request, f"질문은 {MAX_QUESTION_LENGTH}자 이하로 입력해주세요.")
-        elif game_session.question_logs.filter(question_text=question_text).exists():
-            messages.warning(request, "이미 같은 질문을 했습니다.")
-        elif question_text and game_session.question_logs.count() >= settings.MAX_QUESTIONS_PER_GAME:
-            messages.error(
-                request,
-                f"이 게임에서 할 수 있는 질문 {settings.MAX_QUESTIONS_PER_GAME}개를 모두 사용했어요. 정답을 말해 보세요.",
-            )
-        elif question_text and not _consume_ai_call_quota(request):
-            messages.error(request, RATE_LIMIT_MESSAGE)
-        elif question_text:
-            recent_logs = game_session.question_logs.order_by("-created_at")[: settings.QUESTION_HISTORY_LIMIT]
-            history = [(log.question_text, log.answer_label) for log in reversed(list(recent_logs))]
-            puzzle = game_session.puzzle
-            try:
-                judgement = classify_question(
-                    scenario=puzzle.scenario,
-                    answer_text=puzzle.answer_text,
-                    question_criteria=puzzle.get_question_criteria(),
-                    answer_checkpoints=puzzle.get_answer_checkpoints(),
-                    question_text=question_text,
-                    history=history,
-                )
-            except AIServiceError as exc:
-                messages.error(request, str(exc))
-                return redirect("game:play", game_id=game_session.id)
+    if request.method != "POST":
+        return redirect("game:play", game_id=game_session.id)
 
-            QuestionLog.objects.create(
-                game_session=game_session,
-                question_text=question_text,
-                answer_label=judgement.label,
-                revealed_checkpoints=judgement.revealed_checkpoints,
-            )
+    question_text = request.POST.get("question_text", "").strip()
+    log, error, level = _judge_and_log_question(request, game_session, question_text)
 
+    if wants_json:
+        if error:
+            return JsonResponse({"ok": False, "message": error})
+        html = render_to_string(
+            "game/_question_exchange.html", {"log": log, "game_session": game_session}, request=request
+        )
+        return JsonResponse({"ok": True, "html": html, "question_count": game_session.question_logs.count()})
+
+    if error and question_text:
+        messages.add_message(request, level, error)
     return redirect("game:play", game_id=game_session.id)
 
 

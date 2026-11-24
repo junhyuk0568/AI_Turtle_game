@@ -1,0 +1,31 @@
+<div class="message-row user">
+    <div class="message-stack">
+        <span class="message-meta">나</span>
+        <div class="message-bubble user">{{ log.question_text }}</div>
+    </div>
+    <img class="user-avatar" src="/static/game/img/user-image.png" alt="나">
+</div>
+
+<div class="message-row host answer-row">
+    <img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">
+    <div class="message-stack">
+        <span class="message-meta">진행자 · {{ log.created_at|date:"H:i" }}</span>
+        <div class="message-bubble host judgement {% if log.answer_label == "맞습니다" %}yes{% elif log.answer_label == "아닙니다" %}no{% elif log.answer_label == "관계없습니다" %}irrelevant{% else %}maybe{% endif %}">
+            {% if log.answer_label == "맞습니다" %}
+                그렇습니다.
+            {% elif log.answer_label == "아닙니다" %}
+                그렇지 않습니다.
+            {% elif log.answer_label == "관계없습니다" %}
+                관계없습니다.
+            {% else %}
+                그럴 수도 있습니다.
+            {% endif %}
+        </div>
+        <form class="report-form" method="post" action="{% url 'game:report_judgement' game_session.id log.id %}">
+            {% csrf_token %}
+            <button class="report-button" type="submit" {% if log.reported_at %}disabled{% endif %}>
+                {% if log.reported_at %}신고 접수됨{% else %}판정이 이상해요{% endif %}
+            </button>
+        </form>
+    </div>
+</div>
