@@ -1,10 +1,21 @@
 from django.contrib import admin, messages
 from django.db.models import Count, Q
 from django.shortcuts import redirect
+from django.template.response import TemplateResponse
 from django.urls import path, reverse
 
 from .models import AIUsageLog, GameSession, Puzzle, QuestionLog, QuestionTestCase
 from .services import AIServiceError, classify_question, generate_puzzle_criteria
+
+
+CRITERIA_FIELD_LABELS = (
+    ("answer_checkpoints", "정답 체크포인트"),
+    ("checkpoint_hints", "체크포인트 힌트"),
+    ("question_yes_facts", "맞습니다 기준"),
+    ("question_no_facts", "아닙니다 기준"),
+    ("question_irrelevant_facts", "관계없습니다 기준"),
+    ("question_ambiguous_examples", "모호한 질문 예시"),
+)
 
 
 class QuestionTestCaseInline(admin.TabularInline):
@@ -93,40 +104,71 @@ class PuzzleAdmin(admin.ModelAdmin):
         ]
         return custom_urls + urls
 
-    def _apply_generated_criteria(self, puzzle):
-        criteria = generate_puzzle_criteria(puzzle.scenario, puzzle.answer_text)
-        puzzle.answer_checkpoints = "\n".join(criteria.get("answer_checkpoints", []))
-        puzzle.checkpoint_hints = "\n".join(criteria.get("checkpoint_hints", []))
-        puzzle.question_yes_facts = "\n".join(criteria.get("question_yes_facts", []))
-        puzzle.question_no_facts = "\n".join(criteria.get("question_no_facts", []))
-        puzzle.question_irrelevant_facts = "\n".join(criteria.get("question_irrelevant_facts", []))
-        puzzle.question_ambiguous_examples = "\n".join(criteria.get("question_ambiguous_examples", []))
-        puzzle.save(
-            update_fields=[
-                "answer_checkpoints",
-                "checkpoint_hints",
-                "question_yes_facts",
-                "question_no_facts",
-                "question_irrelevant_facts",
-                "question_ambiguous_examples",
-                "updated_at",
-            ]
+    def _filled_criteria_labels(self, puzzle):
+        return [label for field, label in CRITERIA_FIELD_LABELS if getattr(puzzle, field).strip()]
+
+    def _has_fillable_criteria(self, puzzle):
+        # Hints are only written alongside new checkpoints, so they alone never count.
+        return any(
+            not getattr(puzzle, field).strip() for field, _ in CRITERIA_FIELD_LABELS if field != "checkpoint_hints"
         )
+
+    def _apply_generated_criteria(self, puzzle, overwrite=False):
+        """Fill criteria from Claude. Without overwrite, only empty fields change.
+
+        Checkpoint hints are tied line by line to the checkpoints, so they are only
+        written together with newly written checkpoints.
+        """
+        criteria = generate_puzzle_criteria(puzzle.scenario, puzzle.answer_text)
+        write_checkpoints = overwrite or not puzzle.answer_checkpoints.strip()
+        updated_fields = []
+        for field, _label in CRITERIA_FIELD_LABELS:
+            if field == "checkpoint_hints":
+                should_write = write_checkpoints
+            else:
+                should_write = overwrite or not getattr(puzzle, field).strip()
+            if should_write:
+                setattr(puzzle, field, "\n".join(criteria.get(field, [])))
+                updated_fields.append(field)
+        if updated_fields:
+            puzzle.save(update_fields=updated_fields + ["updated_at"])
+        return updated_fields
 
     def generate_ai_criteria_view(self, request, object_id):
         puzzle = self.get_object(request, object_id)
         if puzzle is None:
             self.message_user(request, "문제를 찾을 수 없습니다.", level="error")
             return redirect("..")
+        change_url = reverse("admin:game_puzzle_change", args=[object_id])
 
+        if request.method != "POST":
+            # Generation is billed and can replace hand-edited text, so ask first.
+            context = {
+                **self.admin_site.each_context(request),
+                "opts": self.model._meta,
+                "title": "AI 판정 기준 생성",
+                "puzzle": puzzle,
+                "filled_labels": self._filled_criteria_labels(puzzle),
+                "change_url": change_url,
+            }
+            return TemplateResponse(request, "admin/game/puzzle/generate_criteria_confirm.html", context)
+
+        overwrite = request.POST.get("mode") == "overwrite"
+        if not overwrite and not self._has_fillable_criteria(puzzle):
+            self.message_user(request, "비어 있는 판정 기준이 없어 바꾼 항목이 없습니다.", level=messages.WARNING)
+            return redirect(change_url)
         try:
-            self._apply_generated_criteria(puzzle)
+            updated_fields = self._apply_generated_criteria(puzzle, overwrite=overwrite)
         except AIServiceError as exc:
             self.message_user(request, str(exc), level=messages.ERROR)
-            return redirect(reverse("admin:game_puzzle_change", args=[object_id]))
+            return redirect(change_url)
 
-        self.message_user(request, "AI 판정 기준을 생성했습니다.")
-        return redirect(reverse("admin:game_puzzle_change", args=[object_id]))
+        labels = [label for field, label in CRITERIA_FIELD_LABELS if field in updated_fields]
+        if labels:
+            self.message_user(request, f"AI 판정 기준을 채웠습니다: {', '.join(labels)}")
+        else:
+            self.message_user(request, "비어 있는 판정 기준이 없어 바꾼 항목이 없습니다.", level=messages.WARNING)
+        return redirect(change_url)
 
     def _run_question_tests_for_puzzle(self, puzzle):
         total_count = 0
@@ -160,17 +202,24 @@ class PuzzleAdmin(admin.ModelAdmin):
         self.message_user(request, f"테스트 질문 {passed_count}/{total_count}개가 통과했습니다.")
         return redirect(reverse("admin:game_puzzle_change", args=[object_id]))
 
-    @admin.action(description="선택한 문제의 AI 판정 기준 생성")
+    @admin.action(description="선택한 문제의 비어 있는 AI 판정 기준 채우기")
     def generate_ai_criteria(self, request, queryset):
         updated_count = 0
+        skipped_count = 0
         for puzzle in queryset:
+            if not self._has_fillable_criteria(puzzle):
+                skipped_count += 1
+                continue
             try:
-                self._apply_generated_criteria(puzzle)
-                updated_count += 1
+                if self._apply_generated_criteria(puzzle, overwrite=False):
+                    updated_count += 1
             except AIServiceError as exc:
                 self.message_user(request, f"{puzzle}: {exc}", level=messages.ERROR)
 
-        self.message_user(request, f"{updated_count}개 문제의 판정 기준을 생성했습니다.")
+        self.message_user(
+            request,
+            f"{updated_count}개 문제의 빈 판정 기준을 채웠습니다. 이미 모두 채워진 {skipped_count}개 문제는 건너뛰었습니다.",
+        )
 
     @admin.action(description="선택한 문제의 테스트 질문 실행")
     def run_question_tests(self, request, queryset):

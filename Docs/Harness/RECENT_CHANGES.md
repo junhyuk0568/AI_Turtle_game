@@ -23,3 +23,9 @@ Files: game/models.py, migration 0011, game/services.py, game/admin.py, game/tes
 game/fixtures/starter_puzzles.json, harness docs.
 Purpose: verify real judging, compare models, log cached prompt tokens.
 Verification: test-claude PASS; eval Opus 16/16, Sonnet 16/16, Haiku 14-15/16; offline gate below.
+
+## 2026-11-24 - Starter title and criteria overwrite protection (B1, B3)
+Files: game/admin.py, templates/admin/game/puzzle/generate_criteria_confirm.html,
+game/fixtures/starter_puzzles.json, game/tests.py, README.md.
+Purpose: real starter title; never overwrite hand-edited criteria without consent.
+Verification: offline gate PASS (59 tests); admin confirm page and no-op path observed in browser.

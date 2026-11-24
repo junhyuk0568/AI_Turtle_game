@@ -29,17 +29,20 @@ P0 security/cost: DONE in plan 002 (ownership 404, per-IP and per-game limits,
    hash remains in public Git history but no longer matches).
 P1 live verification: DONE in plan 003 (test-claude PASS, 16-question model eval,
    no refusals, cache-token logging fixed, starter checkpoint hints). Model: Sonnet 5.5
-   chosen by the user; test-claude PASS on it. CI secret run unconfirmed.
+   chosen by the user; test-claude PASS on it. CI passes with the secret.
 NEXT TO-DO (written 2026-11-24, not started):
-A. Wrap-up of P1
-  A1. Commit + push plan 003 work and the Sonnet 5.5 switch.
-  A2. Confirm GitHub Actions passes with the ANTHROPIC_API_KEY secret (user registers it).
+A. Wrap-up of P1: DONE 2026-11-24. 01c912f pushed; CI run 45340406185 passed
+  (django-tests 33 s, billed Claude tests included) with a dedicated CI key.
+  Note: CI warns actions/checkout@v4 and setup-python@v5 target deprecated Node 20.
 B. Content (P2)
-  B1. Rename the starter puzzle ("첫 번째 테스트 문제" -> a real title) in DB + fixture.
+  B1. DONE: starter puzzle renamed to "바다거북스프" (local DB + fixture; fresh
+      migrate + loaddata verified on a scratch DB).
   B2. Add 3-5 new puzzles: draft scenario/truth with the user, run "AI 판정 기준 생성",
       add 8-10 test questions each, run tests, activate.
-  B3. Admin safety: "AI 판정 기준 생성" overwrites hand-edited criteria; confirm or
-      fill only empty fields.
+  B3. DONE: criteria generation is now a confirm page (POST only) with
+      "빈 칸만 채우기" / "모두 덮어쓰기"; bulk action fills empty only and skips
+      puzzles with nothing to fill. Follow-up: "테스트 질문 실행" is still a GET link
+      that triggers billed calls.
 C. Player experience (P2)
   C1. Ask questions without a full page reload (fetch + pending bubble) so the
       1-2 s judging wait feels like a chat.

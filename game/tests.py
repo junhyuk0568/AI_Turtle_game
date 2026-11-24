@@ -668,6 +668,97 @@ class StarterFixtureTests(TestCase):
         self.assertEqual(len(puzzle.get_answer_checkpoints()), 3)
         self.assertEqual(puzzle.question_test_cases.count(), 6)
         self.assertFalse(puzzle.question_test_cases.filter(last_run_at__isnull=False).exists())
+        self.assertEqual(puzzle.title, "바다거북스프")
+        self.assertEqual(len(puzzle.get_checkpoint_hints()), 3)
+
+
+GENERATED_CRITERIA = {
+    "answer_checkpoints": ["새 체크포인트 1", "새 체크포인트 2"],
+    "checkpoint_hints": ["새 힌트 1", "새 힌트 2"],
+    "question_yes_facts": ["새 맞음"],
+    "question_no_facts": ["새 아님"],
+    "question_irrelevant_facts": ["새 무관"],
+    "question_ambiguous_examples": ["새 모호"],
+}
+
+
+class AdminCriteriaGenerationTests(TestCase):
+    def setUp(self):
+        self.admin_user = get_user_model().objects.create_superuser("staff", "staff@example.com", "pw-staff-123")
+        self.client.force_login(self.admin_user)
+        self.puzzle = Puzzle.objects.create(
+            title="기준 문제",
+            scenario="s",
+            answer_text="a",
+            answer_checkpoints="직접 쓴 체크포인트",
+            question_yes_facts="직접 다듬은 맞음 기준",
+        )
+        self.url = reverse("admin:game_puzzle_generate_ai_criteria", args=[self.puzzle.id])
+
+    def _post(self, mode):
+        with patch("game.admin.generate_puzzle_criteria", return_value=GENERATED_CRITERIA) as generator:
+            response = self.client.post(self.url, {"mode": mode}, follow=True)
+        self.puzzle.refresh_from_db()
+        return response, generator
+
+    def test_get_shows_confirmation_without_calling_claude(self):
+        with patch("game.admin.generate_puzzle_criteria") as generator:
+            response = self.client.get(self.url)
+
+        generator.assert_not_called()
+        self.assertContains(response, "빈 칸만 채우기")
+        self.assertContains(response, "모두 덮어쓰기")
+        self.assertContains(response, "정답 체크포인트")
+
+    def test_fill_empty_keeps_hand_edited_fields(self):
+        _, generator = self._post("fill_empty")
+
+        generator.assert_called_once()
+        self.assertEqual(self.puzzle.answer_checkpoints, "직접 쓴 체크포인트")
+        self.assertEqual(self.puzzle.question_yes_facts, "직접 다듬은 맞음 기준")
+        self.assertEqual(self.puzzle.question_no_facts, "새 아님")
+        self.assertEqual(self.puzzle.question_ambiguous_examples, "새 모호")
+        # Hints must stay aligned with the existing checkpoints, so they are not generated here.
+        self.assertEqual(self.puzzle.checkpoint_hints, "")
+
+    def test_fill_empty_writes_hints_with_new_checkpoints(self):
+        self.puzzle.answer_checkpoints = ""
+        self.puzzle.save()
+
+        self._post("fill_empty")
+
+        self.assertEqual(self.puzzle.get_answer_checkpoints(), ["새 체크포인트 1", "새 체크포인트 2"])
+        self.assertEqual(self.puzzle.get_checkpoint_hints(), ["새 힌트 1", "새 힌트 2"])
+        self.assertEqual(self.puzzle.question_yes_facts, "직접 다듬은 맞음 기준")
+
+    def test_overwrite_replaces_everything(self):
+        response, _ = self._post("overwrite")
+
+        self.assertEqual(self.puzzle.answer_checkpoints, "새 체크포인트 1\n새 체크포인트 2")
+        self.assertEqual(self.puzzle.question_yes_facts, "새 맞음")
+        self.assertEqual(self.puzzle.checkpoint_hints, "새 힌트 1\n새 힌트 2")
+        self.assertContains(response, "AI 판정 기준을 채웠습니다")
+
+    def test_fill_empty_skips_billed_call_when_nothing_is_empty(self):
+        for field in ("question_no_facts", "question_irrelevant_facts", "question_ambiguous_examples"):
+            setattr(self.puzzle, field, "직접 작성")
+        self.puzzle.save()
+
+        response, generator = self._post("fill_empty")
+
+        generator.assert_not_called()
+        self.assertContains(response, "비어 있는 판정 기준이 없어")
+
+    def test_bulk_action_only_fills_empty_fields(self):
+        with patch("game.admin.generate_puzzle_criteria", return_value=GENERATED_CRITERIA):
+            self.client.post(
+                reverse("admin:game_puzzle_changelist"),
+                {"action": "generate_ai_criteria", "_selected_action": [self.puzzle.id]},
+            )
+        self.puzzle.refresh_from_db()
+
+        self.assertEqual(self.puzzle.question_yes_facts, "직접 다듬은 맞음 기준")
+        self.assertEqual(self.puzzle.question_no_facts, "새 아님")
 
 
 class AIUsageLogTests(TestCase):
