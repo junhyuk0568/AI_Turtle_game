@@ -1,38 +1,69 @@
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+import json
 
-from django.test import TestCase, override_settings
+from django.contrib.admin.sites import AdminSite
+from django.contrib.auth import get_user_model
+from django.test import RequestFactory, TestCase, override_settings, tag
 from django.urls import reverse
 
-from .models import GameSession, OpenAIUsageLog, Puzzle, QuestionLog, QuestionTestCase
+from .admin import QuestionLogAdmin
+from .models import AIUsageLog, GameSession, Puzzle, QuestionLog, QuestionTestCase
 from .services import (
+    FALLBACK_BETA,
     FINAL_ANSWER_CORRECT,
     FINAL_ANSWER_INSUFFICIENT,
+    LABEL_NO,
+    LABEL_PARTIAL,
+    LABEL_YES,
+    REFUSAL_MESSAGE,
+    AIRefusalError,
+    AIServiceError,
+    FinalAnswerJudgement,
+    QuestionJudgement,
     _classify_final_answer_locally,
     _classify_question_locally,
     _classify_question_with_criteria,
     _generate_puzzle_criteria_locally,
+    _normalize_generated_criteria,
     _normalize_label,
-    _record_openai_usage,
-    _validate_final_answer_api_label,
-    _validate_question_api_label,
-    OpenAIServiceError,
+    _record_ai_usage,
     classify_final_answer,
     classify_question,
     generate_puzzle_criteria,
 )
 
 
+CHECKPOINTS = [
+    "남자는 과거 조난 상황에서 수프를 먹었다.",
+    "그때 먹은 수프는 바다거북스프가 아니라 인육 수프였다.",
+    "식당에서 진짜 바다거북스프를 먹고 과거의 진실을 깨달았다.",
+]
+
+
+def _fake_response(payload=None, stop_reason="end_turn", category=None):
+    text = json.dumps(payload, ensure_ascii=False) if payload is not None else ""
+    return SimpleNamespace(
+        content=[SimpleNamespace(type="text", text=text)],
+        stop_reason=stop_reason,
+        stop_details=SimpleNamespace(category=category) if category else None,
+        usage=SimpleNamespace(input_tokens=120, output_tokens=30),
+        model="claude-opus-5-5",
+    )
+
+
+def _fake_client(response):
+    client = MagicMock()
+    client.beta.messages.create.return_value = response
+    return client
+
+
 class QuestionClassifierTests(TestCase):
     def test_normalize_label_strips_extra_text(self):
         self.assertEqual(_normalize_label("맞습니다."), "맞습니다")
         self.assertEqual(_normalize_label("결과: 관계없습니다"), "관계없습니다")
+        self.assertEqual(_normalize_label("일부만 맞습니다."), LABEL_PARTIAL)
         self.assertEqual(_normalize_label("unknown"), "질문이 모호합니다")
-
-    def test_invalid_openai_labels_raise_service_error(self):
-        with self.assertRaises(OpenAIServiceError):
-            _validate_question_api_label("설명만 있는 응답")
-        with self.assertRaises(OpenAIServiceError):
-            _validate_final_answer_api_label("판단할 수 없음")
 
     def test_local_classifier_returns_distinct_labels_for_dev_testing(self):
         cases = {
@@ -59,21 +90,15 @@ class QuestionClassifierTests(TestCase):
         )
 
     def test_local_final_answer_uses_checkpoints_when_available(self):
-        checkpoints = [
-            "남자는 과거 조난 상황에서 수프를 먹었다.",
-            "그때 먹은 수프는 바다거북스프가 아니라 인육 수프였다.",
-            "식당에서 진짜 바다거북스프를 먹고 과거의 진실을 깨달았다.",
-        ]
-
         self.assertEqual(
             _classify_final_answer_locally(
                 "남자는 예전에 조난당했을 때 먹은 수프가 인육이었고, 식당에서 진짜 바다거북스프를 먹고 그 사실을 깨달았다.",
-                checkpoints,
+                CHECKPOINTS,
             ),
             FINAL_ANSWER_CORRECT,
         )
         self.assertEqual(
-            _classify_final_answer_locally("남자는 예전에 조난당했고 식당에서 수프를 먹었다.", checkpoints),
+            _classify_final_answer_locally("남자는 예전에 조난당했고 식당에서 수프를 먹었다.", CHECKPOINTS),
             FINAL_ANSWER_INSUFFICIENT,
         )
 
@@ -85,14 +110,8 @@ class QuestionClassifierTests(TestCase):
             "ambiguous": ["남자는 이상한 기분이 들었나요?"],
         }
 
-        self.assertEqual(
-            _classify_question_with_criteria("남자는 원래 자살 계획이 있었나요?", criteria),
-            "아닙니다",
-        )
-        self.assertEqual(
-            _classify_question_with_criteria("남자는 집에 돌아온 뒤 자살했나요?", criteria),
-            "맞습니다",
-        )
+        self.assertEqual(_classify_question_with_criteria("남자는 원래 자살 계획이 있었나요?", criteria), "아닙니다")
+        self.assertEqual(_classify_question_with_criteria("남자는 집에 돌아온 뒤 자살했나요?", criteria), "맞습니다")
 
     def test_generate_puzzle_criteria_local_fallback(self):
         criteria = _generate_puzzle_criteria_locally(
@@ -101,7 +120,16 @@ class QuestionClassifierTests(TestCase):
         )
 
         self.assertIn("남자는 원래 자살 계획이 있었다.", criteria["question_no_facts"])
-        self.assertTrue(criteria["answer_checkpoints"])
+        self.assertEqual(len(criteria["checkpoint_hints"]), len(criteria["answer_checkpoints"]))
+
+    def test_generated_checkpoint_hints_are_aligned_to_checkpoints(self):
+        criteria = _normalize_generated_criteria(
+            {"answer_checkpoints": ["a", "b", "c"], "checkpoint_hints": ["h1", "h2", "h3", "extra"]}
+        )
+        self.assertEqual(criteria["checkpoint_hints"], ["h1", "h2", "h3"])
+
+        criteria = _normalize_generated_criteria({"answer_checkpoints": ["a", "b"], "checkpoint_hints": ["h1"]})
+        self.assertEqual(criteria["checkpoint_hints"], ["h1", ""])
 
     def test_question_test_case_stores_last_result(self):
         puzzle = Puzzle.objects.create(
@@ -124,14 +152,146 @@ class QuestionClassifierTests(TestCase):
         self.assertIsNotNone(test_case.last_run_at)
 
 
+@override_settings(
+    ANTHROPIC_API_KEY="test-key", CLAUDE_MODEL="claude-opus-5-5", CLAUDE_EFFORT="low", CLAUDE_REFUSAL_FALLBACK=True
+)
+class ClaudeServiceTests(TestCase):
+    def _classify(self, payload, **kwargs):
+        client = _fake_client(_fake_response(payload))
+        with patch("game.services._get_client", return_value=client):
+            judgement = classify_question(
+                scenario="시나리오",
+                answer_text="진실",
+                question_text="새 질문",
+                answer_checkpoints=CHECKPOINTS,
+                **kwargs,
+            )
+        return judgement, client.beta.messages.create.call_args.kwargs
+
+    def test_question_request_uses_structured_output_history_and_fallback(self):
+        judgement, request = self._classify(
+            {"label": LABEL_YES, "revealed_checkpoints": [1]},
+            history=[("이전 질문", LABEL_NO)],
+        )
+
+        self.assertEqual(judgement, QuestionJudgement(label=LABEL_YES, revealed_checkpoints=[1]))
+        self.assertEqual(request["model"], "claude-opus-5-5")
+        self.assertEqual(request["output_config"]["format"]["type"], "json_schema")
+        self.assertIn(LABEL_PARTIAL, request["output_config"]["format"]["schema"]["properties"]["label"]["enum"])
+        self.assertEqual(request["output_config"]["effort"], "low")
+        self.assertEqual(request["fallbacks"], "default")
+        self.assertEqual(request["betas"], [FALLBACK_BETA])
+        self.assertIn("이전 질문", request["messages"][0]["content"])
+        self.assertIn("새 질문", request["messages"][0]["content"])
+        self.assertIn("진실", request["system"][0]["text"])
+        self.assertNotIn("새 질문", request["system"][0]["text"])
+
+    @override_settings(CLAUDE_REFUSAL_FALLBACK=False)
+    def test_fallback_can_be_disabled_for_models_without_it(self):
+        _, request = self._classify({"label": LABEL_NO, "revealed_checkpoints": []})
+
+        self.assertNotIn("fallbacks", request)
+        self.assertNotIn("betas", request)
+
+    def test_question_judgement_drops_invalid_checkpoints_and_non_confirming_extras(self):
+        judgement, _ = self._classify({"label": LABEL_PARTIAL, "revealed_checkpoints": [2, 9, 2, 0]})
+        self.assertEqual(judgement.revealed_checkpoints, [2])
+
+        judgement, _ = self._classify({"label": LABEL_NO, "revealed_checkpoints": [1]})
+        self.assertEqual(judgement, QuestionJudgement(label=LABEL_NO))
+
+    def test_unknown_label_raises_service_error(self):
+        with self.assertRaises(AIServiceError):
+            self._classify({"label": "몰라요", "revealed_checkpoints": []})
+
+    def test_refusal_raises_friendly_error_and_logs_category(self):
+        client = _fake_client(_fake_response(stop_reason="refusal", category="general_harms"))
+        with patch("game.services._get_client", return_value=client):
+            with self.assertRaisesMessage(AIRefusalError, REFUSAL_MESSAGE):
+                classify_question(scenario="s", answer_text="a", question_text="q")
+
+        log = AIUsageLog.objects.get()
+        self.assertFalse(log.success)
+        self.assertEqual(log.error_message, "refusal: general_harms")
+
+    def test_api_failure_is_wrapped(self):
+        client = MagicMock()
+        client.beta.messages.create.side_effect = RuntimeError("network down")
+        with patch("game.services._get_client", return_value=client):
+            with self.assertRaises(AIServiceError):
+                classify_question(scenario="s", answer_text="a", question_text="q")
+
+    @override_settings(ANTHROPIC_API_KEY="")
+    def test_missing_api_key_raises_service_error(self):
+        with self.assertRaises(AIServiceError):
+            classify_question(scenario="s", answer_text="a", question_text="q")
+
+    def test_final_answer_requires_every_checkpoint(self):
+        payload = {
+            "checkpoints": [{"number": 1, "met": True}, {"number": 2, "met": True}, {"number": 3, "met": False}],
+            "explains_core_truth": True,
+        }
+        client = _fake_client(_fake_response(payload))
+        with patch("game.services._get_client", return_value=client):
+            judgement = classify_final_answer("s", "a", "답변", CHECKPOINTS)
+
+        self.assertEqual(judgement, FinalAnswerJudgement(label=FINAL_ANSWER_INSUFFICIENT, met_count=2, total_count=3))
+
+        payload["checkpoints"][2]["met"] = True
+        client = _fake_client(_fake_response(payload))
+        with patch("game.services._get_client", return_value=client):
+            judgement = classify_final_answer("s", "a", "답변", CHECKPOINTS)
+
+        self.assertEqual(judgement.label, FINAL_ANSWER_CORRECT)
+
+    def test_final_answer_without_checkpoints_uses_core_truth_flag(self):
+        client = _fake_client(_fake_response({"checkpoints": [], "explains_core_truth": True}))
+        with patch("game.services._get_client", return_value=client):
+            judgement = classify_final_answer("s", "a", "답변", [])
+
+        self.assertEqual(judgement.label, FINAL_ANSWER_CORRECT)
+
+    def test_empty_final_answer_skips_api(self):
+        with patch("game.services._get_client") as get_client:
+            judgement = classify_final_answer("s", "a", "   ", CHECKPOINTS)
+
+        get_client.assert_not_called()
+        self.assertEqual(judgement.label, FINAL_ANSWER_INSUFFICIENT)
+
+    def test_generate_criteria_returns_aligned_hints(self):
+        payload = {
+            "answer_checkpoints": ["c1", "c2"],
+            "checkpoint_hints": ["h1"],
+            "question_yes_facts": ["y"],
+            "question_no_facts": ["n"],
+            "question_irrelevant_facts": ["i"],
+            "question_ambiguous_examples": ["m"],
+        }
+        client = _fake_client(_fake_response(payload))
+        with patch("game.services._get_client", return_value=client):
+            criteria = generate_puzzle_criteria("s", "a")
+
+        self.assertEqual(criteria["checkpoint_hints"], ["h1", ""])
+
+
 class GameFlowTests(TestCase):
     def setUp(self):
         self.puzzle = Puzzle.objects.create(
             title="테스트 문제",
             scenario="남자가 식당에서 수프를 먹고 집에 돌아갔다.",
             answer_text="남자는 수프를 먹고 과거의 진실을 깨달았다.",
+            answer_checkpoints="\n".join(CHECKPOINTS),
         )
         self.game_session = GameSession.objects.create(puzzle=self.puzzle, status=GameSession.STATUS_PLAYING)
+
+    def _ask(self, question, judgement):
+        with patch("game.views.classify_question", return_value=judgement) as classifier:
+            response = self.client.post(
+                reverse("game:ask_question", args=[self.game_session.id]),
+                {"question_text": question},
+                follow=True,
+            )
+        return response, classifier
 
     def test_result_page_redirects_until_session_is_cleared(self):
         response = self.client.get(reverse("game:result", args=[self.game_session.id]))
@@ -139,55 +299,115 @@ class GameFlowTests(TestCase):
         self.assertRedirects(response, reverse("game:play", args=[self.game_session.id]))
 
     def test_result_page_is_available_after_session_is_cleared(self):
-        puzzle = Puzzle.objects.create(
-            title="테스트 문제",
-            scenario="남자가 식당에서 수프를 먹고 집에 돌아갔다.",
-            answer_text="남자는 수프를 먹고 과거의 진실을 깨달았다.",
-        )
-        game_session = GameSession.objects.create(puzzle=puzzle, status=GameSession.STATUS_CLEARED)
+        game_session = GameSession.objects.create(puzzle=self.puzzle, status=GameSession.STATUS_CLEARED)
 
         response = self.client.get(reverse("game:result", args=[game_session.id]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, puzzle.answer_text)
+        self.assertContains(response, self.puzzle.answer_text)
         self.assertContains(response, "1000")
 
-    def test_duplicate_question_does_not_call_openai_twice(self):
-        QuestionLog.objects.create(
-            game_session=self.game_session,
-            question_text="남자는 수프를 먹었나요?",
-            answer_label="맞습니다",
+    def test_question_stores_judgement_without_progress_display(self):
+        response, _ = self._ask(
+            "남자는 예전에 조난당한 적이 있나요?",
+            QuestionJudgement(label=LABEL_YES, revealed_checkpoints=[1]),
         )
 
-        with patch("game.views.classify_question") as classifier:
-            self.client.post(
-                reverse("game:ask_question", args=[self.game_session.id]),
-                {"question_text": "남자는 수프를 먹었나요?"},
+        log = self.game_session.question_logs.get()
+        self.assertEqual(log.revealed_checkpoints, [1])
+        self.assertContains(response, "그렇습니다.")
+        self.assertNotContains(response, "진실 탐색도")
+        self.assertNotContains(response, "밝혀냈어요")
+        self.assertNotContains(response, "핵심 질문")
+
+    def test_answer_dialog_states_required_keyword_count(self):
+        response = self.client.get(reverse("game:play", args=[self.game_session.id]))
+
+        self.assertContains(response, "정답에는 핵심 키워드 3개가 모두 포함되어야 합니다.")
+
+    def test_required_keyword_count_is_hidden_without_checkpoints(self):
+        puzzle = Puzzle.objects.create(title="체크포인트 없음", scenario="s", answer_text="a")
+        game_session = GameSession.objects.create(puzzle=puzzle)
+
+        response = self.client.get(reverse("game:play", args=[game_session.id]))
+
+        self.assertNotContains(response, "핵심 키워드")
+
+    def test_host_replies_are_short_phrases(self):
+        cases = [
+            ("질문 1", LABEL_YES, "그렇습니다."),
+            ("질문 2", LABEL_NO, "그렇지 않습니다."),
+            ("질문 3", LABEL_PARTIAL, "그럴 수도 있습니다."),
+            ("질문 4", "질문이 모호합니다", "그럴 수도 있습니다."),
+            ("질문 5", "관계없습니다", "관계없습니다."),
+        ]
+        for question, label, reply in cases:
+            with self.subTest(label=label):
+                response, _ = self._ask(question, QuestionJudgement(label=label))
+                self.assertContains(response, reply)
+
+    @override_settings(QUESTION_HISTORY_LIMIT=2)
+    def test_recent_history_is_sent_oldest_first(self):
+        for index in range(3):
+            QuestionLog.objects.create(
+                game_session=self.game_session, question_text=f"질문 {index}", answer_label=LABEL_NO
             )
+
+        _, classifier = self._ask("새 질문", QuestionJudgement(label=LABEL_NO))
+
+        history = classifier.call_args.kwargs["history"]
+        self.assertEqual([question for question, _ in history], ["질문 1", "질문 2"])
+        self.assertEqual(classifier.call_args.kwargs["answer_checkpoints"], CHECKPOINTS)
+
+    def test_duplicate_question_does_not_call_ai_twice(self):
+        QuestionLog.objects.create(game_session=self.game_session, question_text="남자는 수프를 먹었나요?", answer_label="맞습니다")
+
+        _, classifier = self._ask("남자는 수프를 먹었나요?", QuestionJudgement(label=LABEL_YES))
 
         classifier.assert_not_called()
         self.assertEqual(self.game_session.question_logs.count(), 1)
 
     def test_question_length_is_limited(self):
-        with patch("game.views.classify_question") as classifier:
-            self.client.post(
-                reverse("game:ask_question", args=[self.game_session.id]),
-                {"question_text": "가" * 501},
-            )
+        _, classifier = self._ask("가" * 501, QuestionJudgement(label=LABEL_YES))
 
         classifier.assert_not_called()
         self.assertEqual(self.game_session.question_logs.count(), 0)
 
-    def test_openai_error_is_shown_without_creating_question_log(self):
-        with patch("game.views.classify_question", side_effect=OpenAIServiceError("API 호출 실패")):
+    def test_ai_error_is_shown_without_creating_question_log(self):
+        with patch("game.views.classify_question", side_effect=AIRefusalError(REFUSAL_MESSAGE)):
             response = self.client.post(
                 reverse("game:ask_question", args=[self.game_session.id]),
                 {"question_text": "남자는 수프를 먹었나요?"},
                 follow=True,
             )
 
-        self.assertContains(response, "API 호출 실패")
+        self.assertContains(response, REFUSAL_MESSAGE)
         self.assertEqual(self.game_session.question_logs.count(), 0)
+
+    def test_insufficient_final_answer_shows_matched_count(self):
+        judgement = FinalAnswerJudgement(label=FINAL_ANSWER_INSUFFICIENT, met_count=2, total_count=3)
+        with patch("game.views.classify_final_answer", return_value=judgement):
+            response = self.client.post(
+                reverse("game:submit_final_answer", args=[self.game_session.id]),
+                {"submitted_answer": "남자는 조난당했다."},
+                follow=True,
+            )
+
+        self.assertContains(response, FINAL_ANSWER_INSUFFICIENT)
+        self.assertContains(response, "핵심 3개 중 2개를 맞혔어요.")
+        self.assertContains(response, "정답에는 핵심 키워드 3개가 모두 포함되어야 합니다.")
+        self.game_session.refresh_from_db()
+        self.assertEqual(self.game_session.status, GameSession.STATUS_PLAYING)
+
+    def test_correct_final_answer_clears_game(self):
+        judgement = FinalAnswerJudgement(label=FINAL_ANSWER_CORRECT, met_count=3, total_count=3)
+        with patch("game.views.classify_final_answer", return_value=judgement):
+            response = self.client.post(
+                reverse("game:submit_final_answer", args=[self.game_session.id]),
+                {"submitted_answer": "정답"},
+            )
+
+        self.assertRedirects(response, reverse("game:result", args=[self.game_session.id]))
 
     def test_start_game_resumes_existing_session(self):
         session = self.client.session
@@ -224,60 +444,153 @@ class GameFlowTests(TestCase):
         self.assertEqual(self.game_session.score, 660)
 
 
-class OpenAIUsageLogTests(TestCase):
+class HintTests(TestCase):
+    def setUp(self):
+        self.puzzle = Puzzle.objects.create(
+            title="힌트 문제",
+            scenario="시나리오",
+            answer_text="진실",
+            answer_checkpoints="\n".join(CHECKPOINTS),
+            checkpoint_hints="바다 힌트\n음식 힌트\n맛 힌트",
+            hint1="고정 힌트 1",
+            hint2="고정 힌트 2",
+        )
+        self.game_session = GameSession.objects.create(puzzle=self.puzzle)
+
+    def _use_hint(self):
+        self.client.post(reverse("game:use_hint", args=[self.game_session.id]))
+        self.game_session.refresh_from_db()
+
+    def test_hint_targets_first_unrevealed_checkpoint(self):
+        QuestionLog.objects.create(
+            game_session=self.game_session, question_text="q", answer_label=LABEL_YES, revealed_checkpoints=[1]
+        )
+
+        self._use_hint()
+        self._use_hint()
+
+        self.assertEqual(self.game_session.revealed_hint_texts, ["음식 힌트", "맛 힌트"])
+        self.assertEqual(self.game_session.hint_used_count, 2)
+
+    def test_falls_back_to_fixed_hints_after_checkpoint_hints(self):
+        QuestionLog.objects.create(
+            game_session=self.game_session, question_text="q", answer_label=LABEL_YES, revealed_checkpoints=[1, 2]
+        )
+
+        self._use_hint()
+        self._use_hint()
+
+        self.assertEqual(self.game_session.revealed_hint_texts, ["맛 힌트", "고정 힌트 1"])
+
+    def test_hint_limit_is_kept(self):
+        for _ in range(5):
+            self._use_hint()
+
+        self.assertEqual(self.game_session.hint_used_count, 3)
+        self.assertEqual(len(self.game_session.revealed_hint_texts), 3)
+
+    def test_legacy_sessions_keep_showing_fixed_hints(self):
+        self.game_session.hint_used_count = 1
+        self.game_session.save(update_fields=["hint_used_count"])
+
+        response = self.client.get(reverse("game:play", args=[self.game_session.id]))
+
+        self.assertContains(response, "고정 힌트 1")
+
+
+class JudgementReportTests(TestCase):
+    def setUp(self):
+        self.puzzle = Puzzle.objects.create(title="신고 문제", scenario="s", answer_text="a")
+        self.game_session = GameSession.objects.create(puzzle=self.puzzle)
+        self.log = QuestionLog.objects.create(game_session=self.game_session, question_text="이상한 판정?", answer_label=LABEL_NO)
+
+    def test_player_can_report_a_judgement(self):
+        response = self.client.post(
+            reverse("game:report_judgement", args=[self.game_session.id, self.log.id]), follow=True
+        )
+
+        self.log.refresh_from_db()
+        self.assertIsNotNone(self.log.reported_at)
+        self.assertContains(response, "판정 신고가 접수되었어요.")
+        self.assertContains(response, "신고 접수됨")
+
+    def test_cannot_report_a_log_from_another_game(self):
+        other_session = GameSession.objects.create(puzzle=self.puzzle)
+
+        response = self.client.post(reverse("game:report_judgement", args=[other_session.id, self.log.id]))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_action_registers_reported_question_as_test_case(self):
+        admin_user = get_user_model().objects.create_superuser("admin", "admin@example.com", "pw")
+        request = RequestFactory().post("/admin/")
+        request.user = admin_user
+        model_admin = QuestionLogAdmin(QuestionLog, AdminSite())
+        model_admin.message_user = MagicMock()
+        action = next(a for a in model_admin.actions if a.short_description.endswith(f"{LABEL_YES})"))
+
+        action(model_admin, request, QuestionLog.objects.all())
+        action(model_admin, request, QuestionLog.objects.all())
+
+        test_case = QuestionTestCase.objects.get()
+        self.assertEqual(test_case.expected_label, LABEL_YES)
+        self.assertEqual(test_case.question_text, "이상한 판정?")
+        self.assertIn(LABEL_NO, test_case.memo)
+
+
+class AIUsageLogTests(TestCase):
     def test_records_token_usage_without_prompt_content(self):
-        usage = type("Usage", (), {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15})()
-        response = type("Response", (), {"usage": usage})()
+        response = SimpleNamespace(usage=SimpleNamespace(input_tokens=10, output_tokens=5), model="claude-opus-5-5")
 
-        _record_openai_usage("question_classification", response=response)
+        _record_ai_usage("question_classification", response=response)
 
-        log = OpenAIUsageLog.objects.get()
+        log = AIUsageLog.objects.get()
         self.assertEqual(log.input_tokens, 10)
         self.assertEqual(log.output_tokens, 5)
         self.assertEqual(log.total_tokens, 15)
+        self.assertEqual(log.model, "claude-opus-5-5")
         self.assertTrue(log.success)
 
-    @override_settings(OPENAI_API_KEY="secret-test-key")
+    @override_settings(ANTHROPIC_API_KEY="secret-test-key")
     def test_redacts_api_key_from_error_log(self):
-        _record_openai_usage("question_classification", error_message="failed with secret-test-key")
+        _record_ai_usage("question_classification", error_message="failed with secret-test-key")
 
-        self.assertEqual(OpenAIUsageLog.objects.get().error_message, "failed with [redacted]")
+        self.assertEqual(AIUsageLog.objects.get().error_message, "failed with [redacted]")
 
 
-class OpenAIIntegrationTests(TestCase):
-    def test_openai_question_classifier_returns_expected_label(self):
-        with patch("game.services._classify_question_locally", side_effect=AssertionError("OpenAI API was not called.")):
-            response_label = classify_question(
-                scenario="남자가 식당에서 바다거북스프를 먹고 집에 돌아가 자살했다.",
-                answer_text="남자는 과거 조난 때 먹은 음식이 인육이었다는 사실을 식당의 수프 맛으로 깨달았다.",
-                question_text="남자는 식당에서 수프를 먹었나요?",
-            )
+@tag("claude_api")
+class ClaudeIntegrationTests(TestCase):
+    """Real, billed Claude API calls. Run with: manage.py test game --tag=claude_api"""
 
-        self.assertEqual(response_label, "맞습니다")
+    SCENARIO = "남자가 식당에서 바다거북스프를 먹고 집에 돌아가 자살했다."
+    ANSWER = "과거 조난 때 인육 수프를 먹었고, 식당의 진짜 바다거북스프 맛으로 진실을 깨달았다."
 
-    def test_openai_final_answer_classifier_returns_expected_label(self):
-        response_label = classify_final_answer(
-            scenario="남자가 식당에서 바다거북스프를 먹고 집에 돌아가 자살했다.",
-            answer_text="과거 조난 때 인육 수프를 먹었고, 식당의 진짜 바다거북스프 맛으로 진실을 깨달았다.",
-            answer_checkpoints=[
-                "과거 조난 상황에서 수프를 먹었다.",
-                "과거에 먹은 수프는 인육 수프였다.",
-                "식당의 진짜 바다거북스프 맛으로 진실을 깨달았다.",
-            ],
+    def test_claude_question_classifier_returns_expected_label(self):
+        judgement = classify_question(
+            scenario=self.SCENARIO,
+            answer_text=self.ANSWER,
+            question_text="남자는 식당에서 수프를 먹었나요?",
+            answer_checkpoints=CHECKPOINTS,
+        )
+
+        self.assertEqual(judgement.label, LABEL_YES)
+
+    def test_claude_final_answer_classifier_returns_expected_label(self):
+        judgement = classify_final_answer(
+            scenario=self.SCENARIO,
+            answer_text=self.ANSWER,
+            answer_checkpoints=CHECKPOINTS,
             submitted_answer=(
-                "남자는 과거 조난 상황에서 수프를 먹었다. 과거에 먹은 수프는 인육 수프였다. "
-                "식당의 진짜 바다거북스프 맛으로 진실을 깨달았다."
+                "남자는 과거 조난 상황에서 수프를 먹었는데 그건 인육 수프였다. "
+                "식당에서 진짜 바다거북스프를 먹고 그 진실을 깨달았다."
             ),
         )
 
-        self.assertEqual(response_label, FINAL_ANSWER_CORRECT)
+        self.assertEqual(judgement.label, FINAL_ANSWER_CORRECT)
 
-    def test_openai_generates_puzzle_criteria(self):
-        criteria = generate_puzzle_criteria(
-            scenario="남자가 식당에서 바다거북스프를 먹고 집에 돌아가 자살했다.",
-            answer_text="과거 조난 때 인육 수프를 먹었고, 식당의 진짜 바다거북스프 맛으로 진실을 깨달았다.",
-        )
+    def test_claude_generates_puzzle_criteria(self):
+        criteria = generate_puzzle_criteria(scenario=self.SCENARIO, answer_text=self.ANSWER)
 
         self.assertTrue(criteria["answer_checkpoints"])
-        self.assertTrue(criteria["question_yes_facts"])
+        self.assertEqual(len(criteria["checkpoint_hints"]), len(criteria["answer_checkpoints"]))
         self.assertTrue(criteria["question_no_facts"])

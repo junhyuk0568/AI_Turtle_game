@@ -27,6 +27,10 @@ class Puzzle(models.Model):
         blank=True,
         help_text="'질문이 모호합니다'로 답해야 하는 예시를 줄마다 하나씩 입력하세요.",
     )
+    checkpoint_hints = models.TextField(
+        blank=True,
+        help_text="정답 체크포인트와 같은 순서로, 각 체크포인트 쪽으로 이끄는 힌트를 줄마다 하나씩 입력하세요.",
+    )
     hint1 = models.CharField(max_length=255, blank=True)
     hint2 = models.CharField(max_length=255, blank=True)
     hint3 = models.CharField(max_length=255, blank=True)
@@ -42,6 +46,9 @@ class Puzzle(models.Model):
 
     def get_answer_checkpoints(self):
         return [line.strip() for line in self.answer_checkpoints.splitlines() if line.strip()]
+
+    def get_checkpoint_hints(self):
+        return [line.strip() for line in self.checkpoint_hints.splitlines()]
 
     def get_question_criteria(self):
         return {
@@ -78,6 +85,7 @@ class GameSession(models.Model):
     )
     session_key = models.CharField(max_length=40, blank=True)
     hint_used_count = models.PositiveSmallIntegerField(default=0)
+    revealed_hint_texts = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PLAYING)
     submitted_answer = models.TextField(blank=True)
     cleared_at = models.DateTimeField(null=True, blank=True)
@@ -95,6 +103,15 @@ class GameSession(models.Model):
         self.cleared_at = timezone.now()
         self.save(update_fields=["status", "submitted_answer", "cleared_at"])
 
+    def revealed_checkpoint_numbers(self):
+        checkpoint_count = len(self.puzzle.get_answer_checkpoints())
+        numbers = set()
+        for revealed in self.question_logs.values_list("revealed_checkpoints", flat=True):
+            for number in revealed or []:
+                if isinstance(number, int) and 1 <= number <= checkpoint_count:
+                    numbers.add(number)
+        return numbers
+
     @property
     def score(self):
         question_count = getattr(self, "question_count_value", None)
@@ -110,6 +127,8 @@ class QuestionLog(models.Model):
     game_session = models.ForeignKey(GameSession, on_delete=models.CASCADE, related_name="question_logs")
     question_text = models.TextField()
     answer_label = models.CharField(max_length=20, default=ANSWER_LABEL_AMBIGUOUS)
+    revealed_checkpoints = models.JSONField(default=list, blank=True)
+    reported_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -121,11 +140,13 @@ class QuestionLog(models.Model):
 
 class QuestionTestCase(models.Model):
     LABEL_YES = "맞습니다"
+    LABEL_PARTIAL = "일부만 맞습니다"
     LABEL_NO = "아닙니다"
     LABEL_AMBIGUOUS = "질문이 모호합니다"
     LABEL_IRRELEVANT = "관계없습니다"
     LABEL_CHOICES = [
         (LABEL_YES, LABEL_YES),
+        (LABEL_PARTIAL, LABEL_PARTIAL),
         (LABEL_NO, LABEL_NO),
         (LABEL_AMBIGUOUS, LABEL_AMBIGUOUS),
         (LABEL_IRRELEVANT, LABEL_IRRELEVANT),
@@ -153,7 +174,7 @@ class QuestionTestCase(models.Model):
         self.save(update_fields=["last_answer_label", "last_passed", "last_run_at"])
 
 
-class OpenAIUsageLog(models.Model):
+class AIUsageLog(models.Model):
     operation = models.CharField(max_length=40)
     model = models.CharField(max_length=100)
     input_tokens = models.PositiveIntegerField(default=0)

@@ -8,8 +8,8 @@ jobs:
   django-tests:
     runs-on: ubuntu-latest
     env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      OPENAI_CLASSIFIER_MODEL: gpt-5-mini
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GAME_CLAUDE_MODEL: claude-opus-5-5
       DJANGO_SECRET_KEY: github-actions-test-key
       DJANGO_DEBUG: "False"
 

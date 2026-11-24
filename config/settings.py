@@ -84,14 +84,19 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_CLASSIFIER_MODEL = os.getenv("OPENAI_CLASSIFIER_MODEL", "gpt-5-mini")
-OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
-OPENAI_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "2"))
-OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "low")
-OPENAI_QUESTION_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_QUESTION_MAX_OUTPUT_TOKENS", "1000"))
-OPENAI_FINAL_ANSWER_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_FINAL_ANSWER_MAX_OUTPUT_TOKENS", "1000"))
-OPENAI_CRITERIA_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_CRITERIA_MAX_OUTPUT_TOKENS", "5000"))
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL = os.getenv("GAME_CLAUDE_MODEL", "claude-opus-5-5")
+CLAUDE_EFFORT = os.getenv("GAME_CLAUDE_EFFORT", "low")
+CLAUDE_TIMEOUT_SECONDS = float(os.getenv("GAME_CLAUDE_TIMEOUT_SECONDS", "60"))
+CLAUDE_MAX_RETRIES = int(os.getenv("GAME_CLAUDE_MAX_RETRIES", "2"))
+# Env names use a GAME_ prefix so they never collide with Claude Code's own CLAUDE_* variables.
+# Server-side refusal fallback (beta). Disable for models without it, e.g. claude-haiku-5-5.
+CLAUDE_REFUSAL_FALLBACK = os.getenv("GAME_CLAUDE_REFUSAL_FALLBACK", "True").lower() == "true"
+# max_tokens caps thinking plus the JSON answer.
+CLAUDE_QUESTION_MAX_TOKENS = int(os.getenv("GAME_CLAUDE_QUESTION_MAX_TOKENS", "4000"))
+CLAUDE_FINAL_ANSWER_MAX_TOKENS = int(os.getenv("GAME_CLAUDE_FINAL_ANSWER_MAX_TOKENS", "4000"))
+CLAUDE_CRITERIA_MAX_TOKENS = int(os.getenv("GAME_CLAUDE_CRITERIA_MAX_TOKENS", "16000"))
+QUESTION_HISTORY_LIMIT = int(os.getenv("GAME_QUESTION_HISTORY_LIMIT", "8"))
 
 LOGGING = {
     "version": 1,

@@ -3,8 +3,8 @@ from django.db.models import Count, Q
 from django.shortcuts import redirect
 from django.urls import path, reverse
 
-from .models import GameSession, OpenAIUsageLog, Puzzle, QuestionLog, QuestionTestCase
-from .services import OpenAIServiceError, classify_question, generate_puzzle_criteria
+from .models import AIUsageLog, GameSession, Puzzle, QuestionLog, QuestionTestCase
+from .services import AIServiceError, classify_question, generate_puzzle_criteria
 
 
 class QuestionTestCaseInline(admin.TabularInline):
@@ -52,7 +52,7 @@ class PuzzleAdmin(admin.ModelAdmin):
                 )
             },
         ),
-        ("힌트", {"fields": ("hint1", "hint2", "hint3")}),
+        ("힌트", {"fields": ("checkpoint_hints", "hint1", "hint2", "hint3")}),
     )
 
     def get_queryset(self, request):
@@ -96,6 +96,7 @@ class PuzzleAdmin(admin.ModelAdmin):
     def _apply_generated_criteria(self, puzzle):
         criteria = generate_puzzle_criteria(puzzle.scenario, puzzle.answer_text)
         puzzle.answer_checkpoints = "\n".join(criteria.get("answer_checkpoints", []))
+        puzzle.checkpoint_hints = "\n".join(criteria.get("checkpoint_hints", []))
         puzzle.question_yes_facts = "\n".join(criteria.get("question_yes_facts", []))
         puzzle.question_no_facts = "\n".join(criteria.get("question_no_facts", []))
         puzzle.question_irrelevant_facts = "\n".join(criteria.get("question_irrelevant_facts", []))
@@ -103,6 +104,7 @@ class PuzzleAdmin(admin.ModelAdmin):
         puzzle.save(
             update_fields=[
                 "answer_checkpoints",
+                "checkpoint_hints",
                 "question_yes_facts",
                 "question_no_facts",
                 "question_irrelevant_facts",
@@ -119,7 +121,7 @@ class PuzzleAdmin(admin.ModelAdmin):
 
         try:
             self._apply_generated_criteria(puzzle)
-        except OpenAIServiceError as exc:
+        except AIServiceError as exc:
             self.message_user(request, str(exc), level=messages.ERROR)
             return redirect(reverse("admin:game_puzzle_change", args=[object_id]))
 
@@ -130,13 +132,14 @@ class PuzzleAdmin(admin.ModelAdmin):
         total_count = 0
         passed_count = 0
         for test_case in puzzle.question_test_cases.all():
-            answer_label = classify_question(
+            judgement = classify_question(
                 scenario=puzzle.scenario,
                 answer_text=puzzle.answer_text,
                 question_text=test_case.question_text,
                 question_criteria=puzzle.get_question_criteria(),
+                answer_checkpoints=puzzle.get_answer_checkpoints(),
             )
-            test_case.mark_result(answer_label)
+            test_case.mark_result(judgement.label)
             total_count += 1
             if test_case.last_passed:
                 passed_count += 1
@@ -150,7 +153,7 @@ class PuzzleAdmin(admin.ModelAdmin):
 
         try:
             passed_count, total_count = self._run_question_tests_for_puzzle(puzzle)
-        except OpenAIServiceError as exc:
+        except AIServiceError as exc:
             self.message_user(request, str(exc), level=messages.ERROR)
             return redirect(reverse("admin:game_puzzle_change", args=[object_id]))
 
@@ -164,7 +167,7 @@ class PuzzleAdmin(admin.ModelAdmin):
             try:
                 self._apply_generated_criteria(puzzle)
                 updated_count += 1
-            except OpenAIServiceError as exc:
+            except AIServiceError as exc:
                 self.message_user(request, f"{puzzle}: {exc}", level=messages.ERROR)
 
         self.message_user(request, f"{updated_count}개 문제의 판정 기준을 생성했습니다.")
@@ -176,7 +179,7 @@ class PuzzleAdmin(admin.ModelAdmin):
         for puzzle in queryset:
             try:
                 puzzle_passed_count, puzzle_total_count = self._run_question_tests_for_puzzle(puzzle)
-            except OpenAIServiceError as exc:
+            except AIServiceError as exc:
                 self.message_user(request, f"{puzzle}: {exc}", level=messages.ERROR)
                 continue
             passed_count += puzzle_passed_count
@@ -203,11 +206,43 @@ class GameSessionAdmin(admin.ModelAdmin):
         return obj.score
 
 
+def _make_report_to_test_action(index, expected_label):
+    def action(modeladmin, request, queryset):
+        created_count = 0
+        for log in queryset.select_related("game_session__puzzle"):
+            _, created = QuestionTestCase.objects.get_or_create(
+                puzzle=log.game_session.puzzle,
+                question_text=log.question_text,
+                defaults={
+                    "expected_label": expected_label,
+                    "memo": f"플레이어 판정 신고에서 등록 (기존 판정: {log.answer_label})"[:255],
+                },
+            )
+            if created:
+                created_count += 1
+        modeladmin.message_user(
+            request,
+            f"테스트 질문 {created_count}개를 기대 판정 '{expected_label}'으로 등록했습니다. 이미 있던 질문은 건너뛰었습니다.",
+        )
+
+    action.__name__ = f"register_as_test_case_{index}"
+    action.short_description = f"테스트 질문으로 등록 (기대 판정: {expected_label})"
+    return action
+
+
 @admin.register(QuestionLog)
 class QuestionLogAdmin(admin.ModelAdmin):
-    list_display = ("id", "game_session", "answer_label", "created_at")
+    list_display = ("id", "game_session", "short_question", "answer_label", "reported_at", "created_at")
     search_fields = ("question_text", "answer_label", "game_session__puzzle__title")
-    list_filter = ("answer_label", "created_at")
+    list_filter = ("answer_label", ("reported_at", admin.EmptyFieldListFilter), "created_at")
+    actions = [
+        _make_report_to_test_action(index, label)
+        for index, (label, _) in enumerate(QuestionTestCase.LABEL_CHOICES)
+    ]
+
+    @admin.display(description="질문")
+    def short_question(self, obj):
+        return obj.question_text[:40]
 
 
 @admin.register(QuestionTestCase)
@@ -236,16 +271,17 @@ class QuestionTestCaseAdmin(admin.ModelAdmin):
         passed_count = 0
         for test_case in queryset.select_related("puzzle"):
             try:
-                answer_label = classify_question(
+                judgement = classify_question(
                     scenario=test_case.puzzle.scenario,
                     answer_text=test_case.puzzle.answer_text,
                     question_text=test_case.question_text,
                     question_criteria=test_case.puzzle.get_question_criteria(),
+                    answer_checkpoints=test_case.puzzle.get_answer_checkpoints(),
                 )
-            except OpenAIServiceError as exc:
+            except AIServiceError as exc:
                 self.message_user(request, f"{test_case}: {exc}", level=messages.ERROR)
                 continue
-            test_case.mark_result(answer_label)
+            test_case.mark_result(judgement.label)
             total_count += 1
             if test_case.last_passed:
                 passed_count += 1
@@ -253,8 +289,8 @@ class QuestionTestCaseAdmin(admin.ModelAdmin):
         self.message_user(request, f"테스트 질문 {passed_count}/{total_count}개가 통과했습니다.")
 
 
-@admin.register(OpenAIUsageLog)
-class OpenAIUsageLogAdmin(admin.ModelAdmin):
+@admin.register(AIUsageLog)
+class AIUsageLogAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "operation",

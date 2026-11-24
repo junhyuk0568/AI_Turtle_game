@@ -2,7 +2,7 @@
 
 ## 1. GitHub Actions
 
-- `OPENAI_API_KEY` repository secret is required.
+- `ANTHROPIC_API_KEY` repository secret is required (Claude integration tests make real, billed calls).
 - After adding or rotating the secret, rerun the failed `Tests` workflow.
 
 ## 2. Production Environment
@@ -11,7 +11,8 @@ Create a production `.env` from `.env.production.example`.
 
 Required changes:
 
-- `OPENAI_API_KEY`: production OpenAI API key
+- `ANTHROPIC_API_KEY`: production Claude API key
+- `GAME_CLAUDE_MODEL`, `GAME_CLAUDE_EFFORT`: model and effort for judging (see README)
 - `DJANGO_SECRET_KEY`: long random secret, never reused from local dev
 - `DJANGO_ALLOWED_HOSTS`: production domain names
 - `DJANGO_DEBUG=False`
