@@ -18,7 +18,7 @@ Copy-Item .env.example .env
 
 ```env
 ANTHROPIC_API_KEY=발급받은_API_키
-GAME_CLAUDE_MODEL=claude-opus-5-5
+GAME_CLAUDE_MODEL=claude-sonnet-5-5
 GAME_CLAUDE_EFFORT=low
 ```
 

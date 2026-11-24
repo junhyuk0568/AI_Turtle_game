@@ -33,13 +33,18 @@ def _record_ai_usage(operation, response=None, error_message=""):
 
         usage = getattr(response, "usage", None)
         input_tokens = getattr(usage, "input_tokens", 0) or 0
+        # Cached prompt tokens are reported separately and are billed too.
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
         output_tokens = getattr(usage, "output_tokens", 0) or 0
-        total_tokens = getattr(usage, "total_tokens", None) or (input_tokens + output_tokens)
+        total_tokens = input_tokens + cache_creation + cache_read + output_tokens
         safe_error_message = _redact(error_message)
         AIUsageLog.objects.create(
             operation=operation,
             model=getattr(response, "model", None) or settings.CLAUDE_MODEL,
             input_tokens=input_tokens,
+            cache_creation_input_tokens=cache_creation,
+            cache_read_input_tokens=cache_read,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             success=not safe_error_message,
@@ -645,7 +650,7 @@ def _generate_puzzle_criteria_locally(scenario, answer_text):
                 "식당에서 진짜 바다거북스프를 먹고 과거의 진실을 깨달았다.",
             ],
             "checkpoint_hints": [
-                "남자의 과거에 바다와 관련된 큰 사건이 있었습니다.",
+                "남자의 과거에 목숨이 걸린 큰 사건이 있었습니다.",
                 "남자가 예전에 먹었던 음식의 정체를 의심해 보세요.",
                 "식당의 수프 맛이 남자에게 무엇을 알려 주었을까요?",
             ],

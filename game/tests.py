@@ -161,7 +161,7 @@ class QuestionClassifierTests(TestCase):
 
 
 @override_settings(
-    ANTHROPIC_API_KEY="test-key", CLAUDE_MODEL="claude-opus-5-5", CLAUDE_EFFORT="low", CLAUDE_REFUSAL_FALLBACK=True
+    ANTHROPIC_API_KEY="test-key", CLAUDE_MODEL="claude-sonnet-5-5", CLAUDE_EFFORT="low", CLAUDE_REFUSAL_FALLBACK=True
 )
 class ClaudeServiceTests(TestCase):
     def _classify(self, payload, **kwargs):
@@ -183,7 +183,7 @@ class ClaudeServiceTests(TestCase):
         )
 
         self.assertEqual(judgement, QuestionJudgement(label=LABEL_YES, revealed_checkpoints=[1]))
-        self.assertEqual(request["model"], "claude-opus-5-5")
+        self.assertEqual(request["model"], "claude-sonnet-5-5")
         self.assertEqual(request["output_config"]["format"]["type"], "json_schema")
         self.assertIn(LABEL_PARTIAL, request["output_config"]["format"]["schema"]["properties"]["label"]["enum"])
         self.assertEqual(request["output_config"]["effort"], "low")
@@ -682,6 +682,18 @@ class AIUsageLogTests(TestCase):
         self.assertEqual(log.total_tokens, 15)
         self.assertEqual(log.model, "claude-opus-5-5")
         self.assertTrue(log.success)
+
+    def test_records_cached_prompt_tokens(self):
+        usage = SimpleNamespace(
+            input_tokens=50, cache_creation_input_tokens=0, cache_read_input_tokens=1705, output_tokens=26
+        )
+
+        _record_ai_usage("question_classification", response=SimpleNamespace(usage=usage, model="claude-sonnet-5-5"))
+
+        log = AIUsageLog.objects.get()
+        self.assertEqual(log.cache_read_input_tokens, 1705)
+        self.assertEqual(log.cache_creation_input_tokens, 0)
+        self.assertEqual(log.total_tokens, 50 + 1705 + 26)
 
     @override_settings(ANTHROPIC_API_KEY="secret-test-key")
     def test_redacts_api_key_from_error_log(self):

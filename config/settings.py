@@ -85,7 +85,7 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL = os.getenv("GAME_CLAUDE_MODEL", "claude-opus-5-5")
+CLAUDE_MODEL = os.getenv("GAME_CLAUDE_MODEL", "claude-sonnet-5-5")
 CLAUDE_EFFORT = os.getenv("GAME_CLAUDE_EFFORT", "low")
 CLAUDE_TIMEOUT_SECONDS = float(os.getenv("GAME_CLAUDE_TIMEOUT_SECONDS", "60"))
 CLAUDE_MAX_RETRIES = int(os.getenv("GAME_CLAUDE_MAX_RETRIES", "2"))

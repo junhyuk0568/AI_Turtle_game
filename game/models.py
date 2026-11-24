@@ -178,6 +178,8 @@ class AIUsageLog(models.Model):
     operation = models.CharField(max_length=40)
     model = models.CharField(max_length=100)
     input_tokens = models.PositiveIntegerField(default=0)
+    cache_creation_input_tokens = models.PositiveIntegerField(default=0)
+    cache_read_input_tokens = models.PositiveIntegerField(default=0)
     output_tokens = models.PositiveIntegerField(default=0)
     total_tokens = models.PositiveIntegerField(default=0)
     success = models.BooleanField(default=True)

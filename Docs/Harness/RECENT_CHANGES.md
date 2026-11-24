@@ -17,3 +17,9 @@ Files: game/views.py, game/tests.py, game/fixtures/starter_puzzles.json,
 config/settings.py, env examples, .gitignore, harness config, README, DEPLOYMENT, AGENTS.md.
 Purpose: owner-only game access, billed-call limits, stop tracking db.sqlite3.
 Verification: offline gate PASS (52 tests). Gap: admin password rotation (user).
+
+## 2026-11-24 - Live Claude verification (plan 003)
+Files: game/models.py, migration 0011, game/services.py, game/admin.py, game/tests.py,
+game/fixtures/starter_puzzles.json, harness docs.
+Purpose: verify real judging, compare models, log cached prompt tokens.
+Verification: test-claude PASS; eval Opus 16/16, Sonnet 16/16, Haiku 14-15/16; offline gate below.
