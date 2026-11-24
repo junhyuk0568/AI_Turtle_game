@@ -25,8 +25,8 @@ reports that admins register as question test cases. Nothing committed.
 
 ## Next action (backlog 2026-11-24)
 P0 security/cost: DONE in plan 002 (ownership 404, per-IP and per-game limits,
-   DB untracked + fixture). User must rotate the admin password (old hash is in
-   public Git history).
+   DB untracked + fixture). Admin password rotated by the user 2026-11-24 (old
+   hash remains in public Git history but no longer matches).
 P1 live verification (needs user's ANTHROPIC_API_KEY): test-claude, existing
    6 question test cases, refusal check on dark themes, generate checkpoint hints,
    push + GitHub secret.

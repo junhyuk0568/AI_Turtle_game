@@ -1,6 +1,6 @@
 # Plan 002 - P0 security and cost
 
-Status: Complete for code; admin password rotation and history cleanup are user actions
+Status: Complete (admin password rotated by the user 2026-11-24; history cleanup optional)
 Lane: Contract/data (access control, abuse limits, repository data)
 
 ## Outcome and scope
