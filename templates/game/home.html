@@ -101,6 +101,17 @@
         border-top: 1px solid var(--line);
     }
 
+    .cleared-badge {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 2px 9px;
+        border-radius: 999px;
+        background: var(--primary);
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 800;
+    }
+
     @media (max-width: 820px) {
         .hero {
             grid-template-columns: 1fr;
@@ -178,13 +189,16 @@
         {% for puzzle in puzzles %}
             <article class="puzzle-card">
                 <div>
-                    <p class="eyebrow">Puzzle {{ forloop.counter }}</p>
+                    <p class="eyebrow">
+                        Puzzle {{ forloop.counter }}
+                        {% if puzzle.best_score is not None %}<span class="cleared-badge">클리어 · 최고 {{ puzzle.best_score }}점</span>{% endif %}
+                    </p>
                     <h2>{{ puzzle.title }}</h2>
                     <p class="scenario-preview">{{ puzzle.scenario }}</p>
                 </div>
                 <div class="card-footer">
                     <span class="meta">등록일 {{ puzzle.created_at|date:"Y.m.d" }}</span>
-                    <a class="button" href="{% url 'game:start_game' puzzle.id %}">시작하기</a>
+                    <a class="button" href="{% url 'game:start_game' puzzle.id %}">{% if puzzle.best_score is not None %}다시 풀기{% else %}시작하기{% endif %}</a>
                 </div>
             </article>
         {% endfor %}

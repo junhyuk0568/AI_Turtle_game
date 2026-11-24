@@ -834,6 +834,97 @@ class AdminCriteriaGenerationTests(TestCase):
         self.assertEqual(self.puzzle.question_no_facts, "새 아님")
 
 
+class AdminQuestionTestRunTests(TestCase):
+    def setUp(self):
+        admin_user = get_user_model().objects.create_superuser("runner", "runner@example.com", "pw-runner-123")
+        self.client.force_login(admin_user)
+        self.puzzle = Puzzle.objects.create(title="테스트 실행 문제", scenario="s", answer_text="a")
+        QuestionTestCase.objects.create(puzzle=self.puzzle, question_text="q1", expected_label=LABEL_YES)
+        QuestionTestCase.objects.create(puzzle=self.puzzle, question_text="q2", expected_label=LABEL_NO)
+        self.url = reverse("admin:game_puzzle_run_question_tests", args=[self.puzzle.id])
+
+    def test_get_shows_confirmation_without_calling_claude(self):
+        with patch("game.admin.classify_question") as classifier:
+            response = self.client.get(self.url)
+
+        classifier.assert_not_called()
+        self.assertContains(response, "테스트 2개 실행")
+
+    def test_post_runs_tests_and_reports_pass_count(self):
+        with patch("game.admin.classify_question", return_value=QuestionJudgement(label=LABEL_YES)) as classifier:
+            response = self.client.post(self.url, follow=True)
+
+        self.assertEqual(classifier.call_count, 2)
+        self.assertContains(response, "테스트 질문 1/2개가 통과했습니다.")
+
+
+class ReplyFilterTests(TestCase):
+    def test_host_reply_and_class_for_every_label(self):
+        from game.templatetags.game_extras import host_reply, reply_class
+
+        cases = {
+            LABEL_YES: ("그렇습니다.", "yes"),
+            LABEL_NO: ("그렇지 않습니다.", "no"),
+            LABEL_PARTIAL: ("그럴 수도 있습니다.", "maybe"),
+            "질문이 모호합니다": ("그럴 수도 있습니다.", "maybe"),
+            "관계없습니다": ("관계없습니다.", "irrelevant"),
+        }
+        for label, (reply, css) in cases.items():
+            with self.subTest(label=label):
+                self.assertEqual(host_reply(label), reply)
+                self.assertEqual(reply_class(label), css)
+
+
+class ResultAndHomeTests(TestCase):
+    def setUp(self):
+        self.puzzle = Puzzle.objects.create(title="결과 문제", scenario="s", answer_text="진실")
+
+    def test_result_page_replays_questions_with_short_replies(self):
+        game_session = _owned_game(self.client, puzzle=self.puzzle, status=GameSession.STATUS_CLEARED)
+        QuestionLog.objects.create(game_session=game_session, question_text="첫 질문", answer_label=LABEL_YES)
+        QuestionLog.objects.create(game_session=game_session, question_text="둘째 질문", answer_label=LABEL_PARTIAL)
+
+        response = self.client.get(reverse("game:result", args=[game_session.id]))
+
+        self.assertContains(response, "질문 기록")
+        content = response.content.decode()
+        self.assertLess(content.index("첫 질문"), content.index("둘째 질문"))
+        self.assertContains(response, "그렇습니다.")
+        self.assertContains(response, "그럴 수도 있습니다.")
+        self.assertNotContains(response, "판정이 이상해요")
+
+    def test_result_page_without_questions(self):
+        game_session = _owned_game(self.client, puzzle=self.puzzle, status=GameSession.STATUS_CLEARED)
+
+        response = self.client.get(reverse("game:result", args=[game_session.id]))
+
+        self.assertContains(response, "질문 없이 정답을 맞혔어요.")
+
+    def test_home_marks_cleared_puzzles_with_best_score(self):
+        best = _owned_game(self.client, puzzle=self.puzzle, status=GameSession.STATUS_CLEARED)
+        worse = _owned_game(self.client, puzzle=self.puzzle, status=GameSession.STATUS_CLEARED, hint_used_count=2)
+        QuestionLog.objects.create(game_session=worse, question_text="q", answer_label=LABEL_NO)
+        self.assertGreater(best.score, worse.score)
+
+        response = self.client.get(reverse("game:home"))
+
+        self.assertContains(response, f"클리어 · 최고 {best.score}점")
+        self.assertContains(response, "다시 풀기")
+
+    def test_home_ignores_other_visitors_clears(self):
+        GameSession.objects.create(puzzle=self.puzzle, session_key="someone-else", status=GameSession.STATUS_CLEARED)
+
+        response = self.client.get(reverse("game:home"))
+
+        self.assertNotContains(response, "클리어 ·")
+        self.assertContains(response, "시작하기")
+
+    def test_pages_link_the_site_icon(self):
+        response = self.client.get(reverse("game:home"))
+
+        self.assertContains(response, "game/img/favicon.svg")
+
+
 class AIUsageLogTests(TestCase):
     def test_records_token_usage_without_prompt_content(self):
         response = SimpleNamespace(usage=SimpleNamespace(input_tokens=10, output_tokens=5), model="claude-opus-5-5")

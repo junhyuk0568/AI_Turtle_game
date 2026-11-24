@@ -98,21 +98,24 @@ def _get_hint_data(game_session):
 
 
 
-def home(request):
-    puzzles = Puzzle.objects.filter(is_active=True)
-    active_games = []
+def _visitor_games(request):
     if request.user.is_authenticated:
-        active_games = GameSession.objects.filter(
-            user=request.user,
-            status=GameSession.STATUS_PLAYING,
-            puzzle__is_active=True,
-        ).select_related("puzzle").annotate(question_count_value=Count("question_logs"))
-    elif request.session.session_key:
-        active_games = GameSession.objects.filter(
-            session_key=request.session.session_key,
-            status=GameSession.STATUS_PLAYING,
-            puzzle__is_active=True,
-        ).select_related("puzzle").annotate(question_count_value=Count("question_logs"))
+        return GameSession.objects.filter(user=request.user)
+    if request.session.session_key:
+        return GameSession.objects.filter(session_key=request.session.session_key, user__isnull=True)
+    return GameSession.objects.none()
+
+
+def home(request):
+    puzzles = list(Puzzle.objects.filter(is_active=True))
+    games = _visitor_games(request).filter(puzzle__is_active=True).annotate(question_count_value=Count("question_logs"))
+    active_games = games.filter(status=GameSession.STATUS_PLAYING).select_related("puzzle")
+
+    best_scores = {}
+    for game in games.filter(status=GameSession.STATUS_CLEARED):
+        best_scores[game.puzzle_id] = max(best_scores.get(game.puzzle_id, 0), game.score)
+    for puzzle in puzzles:
+        puzzle.best_score = best_scores.get(puzzle.id)
 
     return render(request, "game/home.html", {"puzzles": puzzles, "active_games": active_games})
 
@@ -314,15 +317,16 @@ def result_view(request, game_id):
     if game_session.status != GameSession.STATUS_CLEARED:
         return redirect("game:play", game_id=game_session.id)
 
-    question_count = game_session.question_logs.count()
-    game_session.question_count_value = question_count
+    question_logs = list(game_session.question_logs.order_by("created_at"))
+    game_session.question_count_value = len(question_logs)
     return render(
         request,
         "game/result.html",
         {
             "game_session": game_session,
             "puzzle": game_session.puzzle,
-            "question_count": question_count,
+            "question_count": len(question_logs),
+            "question_logs": question_logs,
             "score": game_session.score,
         },
     )

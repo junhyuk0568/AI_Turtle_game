@@ -36,3 +36,10 @@ game/tests.py, README.md.
 Purpose: chat-like question flow while Claude judges.
 Verification: offline gate PASS (65 tests); browser: pending bubble, reply, count update,
 duplicate error inline, no console errors (one billed Sonnet call).
+
+## 2026-11-24 - Result replay, cleared marks, test-run confirm, icon (C2, C3)
+Files: game/views.py, game/admin.py, game/templatetags/game_extras.py,
+templates/game/{result,home,base,_question_exchange}.html,
+templates/admin/game/puzzle/run_tests_confirm.html, static/game/img/favicon.svg,
+game/tests.py, README.md.
+Verification: offline gate PASS (73 tests); browser: result replay, home badge, icon.

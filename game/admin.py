@@ -193,6 +193,18 @@ class PuzzleAdmin(admin.ModelAdmin):
             self.message_user(request, "문제를 찾을 수 없습니다.", level="error")
             return redirect("..")
 
+        if request.method != "POST":
+            # Each test question is a billed Claude call, so a link alone must not run them.
+            context = {
+                **self.admin_site.each_context(request),
+                "opts": self.model._meta,
+                "title": "테스트 질문 실행",
+                "puzzle": puzzle,
+                "test_count": puzzle.question_test_cases.count(),
+                "change_url": reverse("admin:game_puzzle_change", args=[object_id]),
+            }
+            return TemplateResponse(request, "admin/game/puzzle/run_tests_confirm.html", context)
+
         try:
             passed_count, total_count = self._run_question_tests_for_puzzle(puzzle)
         except AIServiceError as exc:
