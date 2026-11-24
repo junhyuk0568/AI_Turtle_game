@@ -1,27 +1,26 @@
 # Active Context
 
-Status: Needs Verification
-Active plan: Docs/Harness/Plans/001-claude-game-master.md
+Status: Idle (all planned P0-P2 work done; deployment not started)
+Active plan: None (history in Docs/Harness/Plans/001-003)
 
 ## Current work
-Claude game-master upgrade implemented (steps 1-4): Claude API with structured
-judging and question history, four short host replies (no key-question badge,
-per user feedback), checkpoint-based hints, required keyword count in the answer dialog
-and matched count on wrong answers (no progress bar, per user feedback), player judgement
-reports that admins register as question test cases. Nothing committed.
+Claude game master is live locally on claude-sonnet-5-5: structured judging with
+question history, four short host replies, checkpoint hints, async question
+sending, result replay, cleared marks, judgement reports, owner-only games,
+billed-call limits. Six active puzzles in the local DB (1 in the public fixture,
+5 local only). All code committed on main.
 
 ## Decisions
-- Default model claude-sonnet-5-5 (user choice after plan 003 eval), effort low, refusal fallback on; all via GAME_* env vars.
+- Model claude-sonnet-5-5, effort low, refusal fallback on; all via GAME_* env vars.
 - Claude returns JSON only; templates build player-facing text.
-- Migration 0010 (RenameModel to AIUsageLog + new fields) applied to tracked db.sqlite3.
+- db.sqlite3 is local only; puzzle truths beyond the starter stay out of Git.
 - Harness: Codex-only parts not wired; no pre-commit hook.
 
 ## Validation
-- 2026-11-24 offline gate PASS (django-check, migrations-check, test-offline 41 tests):
-  .harness/web/state/verification-9deb4817-591f-4c2d-8a75-a88fe6cd1804.json
-- Browser on a preview DB copy: new play-screen features and missing-key error observed.
-- test-claude: NOT RUN (no ANTHROPIC_API_KEY). Live judging quality and refusal
-  behaviour unverified. CI needs the ANTHROPIC_API_KEY secret.
+- Offline gate (django-check, migrations-check, test-offline) PASS on every commit;
+  latest evidence in .harness/web/state/.
+- test-claude PASS on Sonnet 5.5 locally and in CI (secret ANTHROPIC_API_KEY).
+- Browser checks on a preview DB copy for each UI change (see RECENT_CHANGES).
 
 ## Next action (backlog 2026-11-24)
 P0 security/cost: DONE in plan 002 (ownership 404, per-IP and per-game limits,
@@ -53,7 +52,8 @@ C. Player experience (P2)
   C3. DONE: home marks cleared puzzles with best score. "Give up" not built
       (needs a product decision on scoring).
 E. Small follow-ups
-  E1. Avatar PNGs are 1.3-1.5 MB each but shown at 42 px; resize/convert (WebP).
+  E1. DONE: avatars and header logo served as WebP (3.4 MB -> 38 KB); original PNGs
+      kept as source art.
   E2. New puzzle truths must not go into the public repo (fixture is public);
       add them through the admin into the local/production DB only.
 D. Deployment (P3)

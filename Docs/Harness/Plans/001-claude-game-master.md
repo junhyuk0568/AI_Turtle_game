@@ -1,6 +1,6 @@
 # Plan 001 - Claude game master
 
-Status: Needs Verification (live Claude calls not run)
+Status: Complete (live Claude verified in plan 003)
 Lane: Contract/data (AI provider switch, schema migration 0010)
 
 ## Outcome and scope

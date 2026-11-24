@@ -495,7 +495,7 @@
     <section class="chat-room" aria-label="진행자 채팅">
         <div class="chat-header">
             <div class="host-profile">
-                <img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">
+                <img class="host-avatar" src="/static/game/img/admin-avatar.webp" alt="진행자">
                 <div>
                     <p class="host-name">진행자</p>
                     <p class="host-status" data-host-status>질문을 기다리는 중</p>
@@ -506,7 +506,7 @@
 
         <div class="chat-body" aria-live="polite">
             <div class="message-row host">
-                <img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">
+                <img class="host-avatar" src="/static/game/img/admin-avatar.webp" alt="진행자">
                 <div class="message-stack">
                     <span class="message-meta">진행자</span>
                     <div class="message-bubble host intro">사건을 시작하겠습니다.</div>
@@ -652,13 +652,13 @@
             userRow.innerHTML =
                 '<div class="message-stack"><span class="message-meta">나</span>' +
                 '<div class="message-bubble user"></div></div>' +
-                '<img class="user-avatar" src="/static/game/img/user-image.png" alt="나">';
+                '<img class="user-avatar" src="/static/game/img/user-avatar.webp" alt="나">';
             userRow.querySelector(".message-bubble").textContent = questionText;
 
             const hostRow = document.createElement("div");
             hostRow.className = "message-row host answer-row";
             hostRow.innerHTML =
-                '<img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">' +
+                '<img class="host-avatar" src="/static/game/img/admin-avatar.webp" alt="진행자">' +
                 '<div class="message-stack"><span class="message-meta">진행자</span>' +
                 '<div class="message-bubble host pending" aria-label="진행자가 답변을 생각하는 중">' +
                 '<span class="pending-dot"></span><span class="pending-dot"></span><span class="pending-dot"></span>' +

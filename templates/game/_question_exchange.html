@@ -3,11 +3,11 @@
         <span class="message-meta">나</span>
         <div class="message-bubble user">{{ log.question_text }}</div>
     </div>
-    <img class="user-avatar" src="/static/game/img/user-image.png" alt="나">
+    <img class="user-avatar" src="/static/game/img/user-avatar.webp" alt="나">
 </div>
 
 <div class="message-row host answer-row">
-    <img class="host-avatar" src="/static/game/img/admin-image.png" alt="진행자">
+    <img class="host-avatar" src="/static/game/img/admin-avatar.webp" alt="진행자">
     <div class="message-stack">
         <span class="message-meta">진행자 · {{ log.created_at|date:"H:i" }}</span>
         <div class="message-bubble host judgement {{ log.answer_label|reply_class }}">{{ log.answer_label|host_reply }}</div>

@@ -43,3 +43,7 @@ templates/game/{result,home,base,_question_exchange}.html,
 templates/admin/game/puzzle/run_tests_confirm.html, static/game/img/favicon.svg,
 game/tests.py, README.md.
 Verification: offline gate PASS (73 tests); browser: result replay, home badge, icon.
+
+## 2026-11-24 - Smaller images (E1)
+Files: static/game/img/{admin-avatar,user-avatar,game-logo}.webp, templates/game/{base,play,_question_exchange}.html.
+Purpose: avatars (42 px) and header logo were 3.4 MB of PNG; now 38 KB of WebP.

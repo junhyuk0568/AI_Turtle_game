@@ -924,6 +924,18 @@ class ResultAndHomeTests(TestCase):
 
         self.assertContains(response, "game/img/favicon.svg")
 
+    def test_pages_use_small_webp_images(self):
+        game_session = _owned_game(self.client, puzzle=self.puzzle)
+        QuestionLog.objects.create(game_session=game_session, question_text="q", answer_label=LABEL_YES)
+
+        response = self.client.get(reverse("game:play", args=[game_session.id]))
+
+        self.assertContains(response, "admin-avatar.webp")
+        self.assertContains(response, "user-avatar.webp")
+        self.assertContains(response, "game-logo.webp")
+        for large_png in ("admin-image.png", "user-image.png", "game-logo-transparent.png"):
+            self.assertNotContains(response, large_png)
+
 
 class AIUsageLogTests(TestCase):
     def test_records_token_usage_without_prompt_content(self):
