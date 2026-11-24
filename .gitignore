@@ -7,3 +7,7 @@ __pycache__/
 !.env.production.example
 venv/
 .venv/
+
+# Web harness local state
+.harness/web/state/
+.harness/web/install-manifest.json

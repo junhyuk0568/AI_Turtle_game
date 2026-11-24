@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "projectName": "AI_Turtle_game",
+  "contextPath": "Docs/Harness/ACTIVE_CONTEXT.md",
+  "checks": [
+    {
+      "name": "django-check",
+      "required": true,
+      "reviewed": true,
+      "cwd": ".",
+      "argv": [
+        ".venv/Scripts/python.exe",
+        "manage.py",
+        "check"
+      ],
+      "timeoutMs": 120000
+    },
+    {
+      "name": "migrations-check",
+      "required": true,
+      "reviewed": true,
+      "cwd": ".",
+      "argv": [
+        ".venv/Scripts/python.exe",
+        "manage.py",
+        "makemigrations",
+        "--check",
+        "--dry-run"
+      ],
+      "timeoutMs": 120000
+    },
+    {
+      "name": "test-offline",
+      "required": true,
+      "reviewed": true,
+      "cwd": ".",
+      "argv": [
+        ".venv/Scripts/python.exe",
+        "manage.py",
+        "test",
+        "game",
+        "--exclude-tag=claude_api"
+      ],
+      "timeoutMs": 300000
+    },
+    {
+      "name": "test-claude",
+      "required": true,
+      "reviewed": true,
+      "cwd": ".",
+      "argv": [
+        ".venv/Scripts/python.exe",
+        "manage.py",
+        "test",
+        "game",
+        "--tag=claude_api"
+      ],
+      "timeoutMs": 300000
+    },
+    {
+      "name": "lint",
+      "required": false,
+      "reviewed": true,
+      "cwd": ".",
+      "argv": [],
+      "timeoutMs": 120000,
+      "skipReason": "No linter is configured in the repository."
+    },
+    {
+      "name": "typecheck",
+      "required": false,
+      "reviewed": true,
+      "cwd": ".",
+      "argv": [],
+      "timeoutMs": 120000,
+      "skipReason": "Python project without a configured type checker."
+    },
+    {
+      "name": "build",
+      "required": false,
+      "reviewed": true,
+      "cwd": ".",
+      "argv": [],
+      "timeoutMs": 120000,
+      "skipReason": "Django app has no build step; templates and static files are served directly."
+    }
+  ],
+  "deniedStagedPaths": [
+    ".env",
+    "**/.env",
+    ".env.*",
+    "**/.env.*",
+    ".harness/web/state/**"
+  ],
+  "relatedFiles": [
+    {
+      "contains": "game/models.py",
+      "note": "Model change: add a migration, run migrations-check, and review admin.py and views.py usages."
+    },
+    {
+      "contains": "game/services.py",
+      "note": "Claude service change: keep structured outputs, refusal handling, API-key redaction and usage logging intact; run test-offline, and test-claude only when the Claude request contract changed."
+    },
+    {
+      "contains": "templates/",
+      "note": "Template change: check the page in the browser on desktop and mobile widths."
+    }
+  ],
+  "allowedStagedPaths": [
+    ".env.example",
+    "**/.env.example",
+    ".env.production.example",
+    "**/.env.production.example"
+  ]
+}
