@@ -4,6 +4,7 @@ import json
 
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import RequestFactory, TestCase, override_settings, tag
 from django.urls import reverse
 
@@ -56,6 +57,13 @@ def _fake_client(response):
     client = MagicMock()
     client.beta.messages.create.return_value = response
     return client
+
+
+def _owned_game(client, **fields):
+    """Create a game that belongs to the test client's anonymous session."""
+    session = client.session
+    session.save()
+    return GameSession.objects.create(session_key=session.session_key, **fields)
 
 
 class QuestionClassifierTests(TestCase):
@@ -274,6 +282,7 @@ class ClaudeServiceTests(TestCase):
         self.assertEqual(criteria["checkpoint_hints"], ["h1", ""])
 
 
+@override_settings(AI_CALLS_PER_MINUTE=0)
 class GameFlowTests(TestCase):
     def setUp(self):
         self.puzzle = Puzzle.objects.create(
@@ -282,7 +291,7 @@ class GameFlowTests(TestCase):
             answer_text="남자는 수프를 먹고 과거의 진실을 깨달았다.",
             answer_checkpoints="\n".join(CHECKPOINTS),
         )
-        self.game_session = GameSession.objects.create(puzzle=self.puzzle, status=GameSession.STATUS_PLAYING)
+        self.game_session = _owned_game(self.client, puzzle=self.puzzle, status=GameSession.STATUS_PLAYING)
 
     def _ask(self, question, judgement):
         with patch("game.views.classify_question", return_value=judgement) as classifier:
@@ -299,7 +308,7 @@ class GameFlowTests(TestCase):
         self.assertRedirects(response, reverse("game:play", args=[self.game_session.id]))
 
     def test_result_page_is_available_after_session_is_cleared(self):
-        game_session = GameSession.objects.create(puzzle=self.puzzle, status=GameSession.STATUS_CLEARED)
+        game_session = _owned_game(self.client, puzzle=self.puzzle, status=GameSession.STATUS_CLEARED)
 
         response = self.client.get(reverse("game:result", args=[game_session.id]))
 
@@ -327,7 +336,7 @@ class GameFlowTests(TestCase):
 
     def test_required_keyword_count_is_hidden_without_checkpoints(self):
         puzzle = Puzzle.objects.create(title="체크포인트 없음", scenario="s", answer_text="a")
-        game_session = GameSession.objects.create(puzzle=puzzle)
+        game_session = _owned_game(self.client, puzzle=puzzle)
 
         response = self.client.get(reverse("game:play", args=[game_session.id]))
 
@@ -455,7 +464,7 @@ class HintTests(TestCase):
             hint1="고정 힌트 1",
             hint2="고정 힌트 2",
         )
-        self.game_session = GameSession.objects.create(puzzle=self.puzzle)
+        self.game_session = _owned_game(self.client, puzzle=self.puzzle)
 
     def _use_hint(self):
         self.client.post(reverse("game:use_hint", args=[self.game_session.id]))
@@ -501,7 +510,7 @@ class HintTests(TestCase):
 class JudgementReportTests(TestCase):
     def setUp(self):
         self.puzzle = Puzzle.objects.create(title="신고 문제", scenario="s", answer_text="a")
-        self.game_session = GameSession.objects.create(puzzle=self.puzzle)
+        self.game_session = _owned_game(self.client, puzzle=self.puzzle)
         self.log = QuestionLog.objects.create(game_session=self.game_session, question_text="이상한 판정?", answer_label=LABEL_NO)
 
     def test_player_can_report_a_judgement(self):
@@ -515,7 +524,7 @@ class JudgementReportTests(TestCase):
         self.assertContains(response, "신고 접수됨")
 
     def test_cannot_report_a_log_from_another_game(self):
-        other_session = GameSession.objects.create(puzzle=self.puzzle)
+        other_session = _owned_game(self.client, puzzle=self.puzzle)
 
         response = self.client.post(reverse("game:report_judgement", args=[other_session.id, self.log.id]))
 
@@ -536,6 +545,129 @@ class JudgementReportTests(TestCase):
         self.assertEqual(test_case.expected_label, LABEL_YES)
         self.assertEqual(test_case.question_text, "이상한 판정?")
         self.assertIn(LABEL_NO, test_case.memo)
+
+
+class GameOwnershipTests(TestCase):
+    def setUp(self):
+        self.puzzle = Puzzle.objects.create(title="소유 문제", scenario="s", answer_text="a", hint1="힌트")
+        self.game_session = _owned_game(self.client, puzzle=self.puzzle)
+        self.log = QuestionLog.objects.create(game_session=self.game_session, question_text="q", answer_label=LABEL_NO)
+
+    def _other_client_requests(self):
+        other = self.client_class()
+        game_id = self.game_session.id
+        return {
+            "play": other.get(reverse("game:play", args=[game_id])),
+            "result": other.get(reverse("game:result", args=[game_id])),
+            "ask": other.post(reverse("game:ask_question", args=[game_id]), {"question_text": "새 질문"}),
+            "hint": other.post(reverse("game:use_hint", args=[game_id])),
+            "answer": other.post(reverse("game:submit_final_answer", args=[game_id]), {"submitted_answer": "답"}),
+            "report": other.post(reverse("game:report_judgement", args=[game_id, self.log.id])),
+        }
+
+    def test_other_visitors_cannot_touch_someone_elses_game(self):
+        with patch("game.views.classify_question") as classifier, patch("game.views.classify_final_answer") as grader:
+            responses = self._other_client_requests()
+
+        for name, response in responses.items():
+            with self.subTest(view=name):
+                self.assertEqual(response.status_code, 404)
+        classifier.assert_not_called()
+        grader.assert_not_called()
+        self.game_session.refresh_from_db()
+        self.assertEqual(self.game_session.hint_used_count, 0)
+        self.assertEqual(self.game_session.question_logs.count(), 1)
+
+    def test_owner_can_play(self):
+        response = self.client.get(reverse("game:play", args=[self.game_session.id]))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_logged_in_owner_keeps_access_and_others_do_not(self):
+        owner = get_user_model().objects.create_user("owner", password="pw-owner-123")
+        other = get_user_model().objects.create_user("other", password="pw-other-123")
+        game_session = GameSession.objects.create(puzzle=self.puzzle, user=owner)
+        url = reverse("game:play", args=[game_session.id])
+
+        self.client.force_login(owner)
+        self.assertEqual(self.client.get(url).status_code, 200)
+
+        self.client.force_login(other)
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_game_without_owner_is_not_served(self):
+        orphan = GameSession.objects.create(puzzle=self.puzzle)
+
+        self.assertEqual(self.client.get(reverse("game:play", args=[orphan.id])).status_code, 404)
+
+
+class AbuseLimitTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.puzzle = Puzzle.objects.create(title="제한 문제", scenario="s", answer_text="a")
+        self.game_session = _owned_game(self.client, puzzle=self.puzzle)
+
+    def tearDown(self):
+        cache.clear()
+
+    def _ask(self, question):
+        return self.client.post(
+            reverse("game:ask_question", args=[self.game_session.id]), {"question_text": question}, follow=True
+        )
+
+    @override_settings(AI_CALLS_PER_MINUTE=2, MAX_QUESTIONS_PER_GAME=100)
+    def test_questions_are_rate_limited_per_client(self):
+        with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)) as classifier:
+            self._ask("질문 1")
+            self._ask("질문 2")
+            response = self._ask("질문 3")
+
+        self.assertEqual(classifier.call_count, 2)
+        self.assertContains(response, "요청이 너무 많아요.")
+        self.assertEqual(self.game_session.question_logs.count(), 2)
+
+    @override_settings(AI_CALLS_PER_MINUTE=1)
+    def test_final_answers_share_the_rate_limit(self):
+        judgement = FinalAnswerJudgement(label=FINAL_ANSWER_INSUFFICIENT)
+        with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)):
+            self._ask("질문 1")
+        with patch("game.views.classify_final_answer", return_value=judgement) as grader:
+            response = self.client.post(
+                reverse("game:submit_final_answer", args=[self.game_session.id]), {"submitted_answer": "답"}, follow=True
+            )
+
+        grader.assert_not_called()
+        self.assertContains(response, "요청이 너무 많아요.")
+
+    @override_settings(AI_CALLS_PER_MINUTE=0, MAX_QUESTIONS_PER_GAME=1)
+    def test_questions_per_game_are_capped(self):
+        with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)) as classifier:
+            self._ask("질문 1")
+            response = self._ask("질문 2")
+
+        self.assertEqual(classifier.call_count, 1)
+        self.assertContains(response, "질문 1개를 모두 사용했어요.")
+
+    @override_settings(AI_CALLS_PER_MINUTE=1)
+    def test_duplicate_questions_do_not_use_quota(self):
+        with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)) as classifier:
+            self._ask("질문 1")
+            response = self._ask("질문 1")
+
+        self.assertEqual(classifier.call_count, 1)
+        self.assertContains(response, "이미 같은 질문을 했습니다.")
+
+
+class StarterFixtureTests(TestCase):
+    fixtures = ["starter_puzzles"]
+
+    def test_starter_fixture_loads_puzzle_and_test_questions(self):
+        puzzle = Puzzle.objects.get()
+
+        self.assertTrue(puzzle.is_active)
+        self.assertEqual(len(puzzle.get_answer_checkpoints()), 3)
+        self.assertEqual(puzzle.question_test_cases.count(), 6)
+        self.assertFalse(puzzle.question_test_cases.filter(last_run_at__isnull=False).exists())
 
 
 class AIUsageLogTests(TestCase):

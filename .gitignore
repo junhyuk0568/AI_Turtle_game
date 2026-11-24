@@ -11,3 +11,6 @@ venv/
 # Web harness local state
 .harness/web/state/
 .harness/web/install-manifest.json
+
+# Local database (starter data lives in game/fixtures/starter_puzzles.json)
+db.sqlite3

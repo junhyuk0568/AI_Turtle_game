@@ -36,8 +36,11 @@ authorization without adding redundant approval steps.
 ## Project rules
 
 - Never print, log, or commit `.env` values or the Anthropic API key.
-- `db.sqlite3` is tracked because it holds the starter puzzles. Do not commit
-  local play data or test edits to it; schema changes need a migration.
+- `db.sqlite3` is local only and never committed (it holds accounts and play
+  logs). Starter puzzles live in `game/fixtures/starter_puzzles.json`; schema
+  changes need a migration.
+- Game views must go through `_get_game_session(request, game_id)` so only the
+  owner (session or user) can reach a game; billed calls must pass the quota.
 - Real gameplay judging always calls Claude; do not hide API failures behind
   local fallbacks (see README "진행자(Claude) 동작").
 - Claude returns schema-constrained JSON only; player-facing text comes from

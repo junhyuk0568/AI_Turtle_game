@@ -28,8 +28,12 @@ GAME_CLAUDE_EFFORT=low
 
 ```powershell
 .venv\Scripts\python.exe manage.py migrate
+.venv\Scripts\python.exe manage.py loaddata starter_puzzles
+.venv\Scripts\python.exe manage.py createsuperuser
 .venv\Scripts\python.exe manage.py runserver
 ```
+
+`loaddata starter_puzzles`는 처음 한 번만 실행합니다. 기본 문제와 테스트 질문을 `game/fixtures/starter_puzzles.json`에서 불러옵니다. `db.sqlite3`는 Git에 올리지 않습니다.
 
 브라우저에서 `http://127.0.0.1:8000/`에 접속합니다.
 
@@ -65,6 +69,13 @@ GAME_CLAUDE_EFFORT=low
 - 정답이 부족하면 "핵심 N개 중 M개를 맞혔어요"처럼 맞힌 개수만 알려줍니다. 어떤 키워드인지는 알려주지 않습니다.
 - 점수는 1,000점에서 시작하며 질문당 20점, 힌트당 150점이 차감됩니다.
 
+## 남용 방지
+
+- 게임은 만든 사람(같은 브라우저 세션, 또는 로그인한 사용자)만 열 수 있습니다. 다른 사람의 게임 번호로 접근하면 404가 됩니다.
+- 유료 Claude 호출(질문, 정답 제출)은 IP당 1분에 `GAME_AI_CALLS_PER_MINUTE`회(기본 10)로 제한합니다. 0이면 제한하지 않습니다.
+- 게임 하나에서 할 수 있는 질문은 `GAME_MAX_QUESTIONS_PER_GAME`개(기본 100)까지입니다.
+- 같은 질문을 다시 보내면 Claude를 호출하지 않고 횟수도 세지 않습니다.
+
 ## 판정 품질 관리
 
 - 플레이어는 판정마다 `판정이 이상해요`를 눌러 신고할 수 있습니다.
@@ -86,4 +97,6 @@ GAME_CLAUDE_EFFORT=low
 - `DJANGO_DEBUG=False` 설정
 - `DJANGO_ALLOWED_HOSTS`에 실제 도메인 등록
 - HTTPS 적용 후 `DJANGO_SECURE_SSL_REDIRECT`, 보안 쿠키, HSTS 설정 활성화
-- 현재 `db.sqlite3`에는 기본 퍼즐 데이터가 있어 Git에서 계속 추적합니다. 실제 운영에서는 별도 데이터베이스로 이전하는 것을 권장합니다.
+- 운영 데이터는 Git 밖의 별도 데이터베이스에 둡니다. 기본 문제는 fixture로 불러옵니다.
+- 서버 여러 대 또는 여러 워커로 실행하면 요청 제한이 워커마다 따로 계산됩니다. Redis 같은 공유 캐시를 설정하세요.
+- 리버스 프록시 뒤에서는 `REMOTE_ADDR`가 프록시 주소가 되므로, 실제 클라이언트 IP를 넘겨받도록 설정해야 요청 제한이 사용자별로 동작합니다.

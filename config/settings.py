@@ -97,6 +97,10 @@ CLAUDE_QUESTION_MAX_TOKENS = int(os.getenv("GAME_CLAUDE_QUESTION_MAX_TOKENS", "4
 CLAUDE_FINAL_ANSWER_MAX_TOKENS = int(os.getenv("GAME_CLAUDE_FINAL_ANSWER_MAX_TOKENS", "4000"))
 CLAUDE_CRITERIA_MAX_TOKENS = int(os.getenv("GAME_CLAUDE_CRITERIA_MAX_TOKENS", "16000"))
 QUESTION_HISTORY_LIMIT = int(os.getenv("GAME_QUESTION_HISTORY_LIMIT", "8"))
+# Abuse limits for billed Claude calls. The per-minute window is per client IP and
+# uses the default cache; use a shared cache (e.g. Redis) when running several workers.
+AI_CALLS_PER_MINUTE = int(os.getenv("GAME_AI_CALLS_PER_MINUTE", "10"))
+MAX_QUESTIONS_PER_GAME = int(os.getenv("GAME_MAX_QUESTIONS_PER_GAME", "100"))
 
 LOGGING = {
     "version": 1,

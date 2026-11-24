@@ -23,6 +23,13 @@ reports that admins register as question test cases. Nothing committed.
 - test-claude: NOT RUN (no ANTHROPIC_API_KEY). Live judging quality and refusal
   behaviour unverified. CI needs the ANTHROPIC_API_KEY secret.
 
-## Next action
-User adds ANTHROPIC_API_KEY to `.env`, then run test-claude and the admin
-question tests on the starter puzzle.
+## Next action (backlog 2026-11-24)
+P0 security/cost: DONE in plan 002 (ownership 404, per-IP and per-game limits,
+   DB untracked + fixture). User must rotate the admin password (old hash is in
+   public Git history).
+P1 live verification (needs user's ANTHROPIC_API_KEY): test-claude, existing
+   6 question test cases, refusal check on dark themes, generate checkpoint hints,
+   push + GitHub secret.
+P2 content/UX: more puzzles (only 1 active), result-page question replay,
+   waiting UX for slower judging.
+P3 deployment: static files, WSGI server, managed DB.

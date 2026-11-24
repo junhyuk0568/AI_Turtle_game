@@ -11,3 +11,9 @@ CI workflow, README, DEPLOYMENT, AGENTS.md, harness config.
 Purpose: switch judging to Claude and add game-master presentation, adaptive
 hints and judgement reports. Verification: offline gate PASS; browser observed;
 test-claude not run. Gap: live Claude judging unverified.
+
+## 2026-11-24 - P0 security and cost (plan 002)
+Files: game/views.py, game/tests.py, game/fixtures/starter_puzzles.json,
+config/settings.py, env examples, .gitignore, harness config, README, DEPLOYMENT, AGENTS.md.
+Purpose: owner-only game access, billed-call limits, stop tracking db.sqlite3.
+Verification: offline gate PASS (52 tests). Gap: admin password rotation (user).

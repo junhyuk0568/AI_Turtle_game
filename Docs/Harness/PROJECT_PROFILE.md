@@ -12,7 +12,7 @@ Status: CONFIGURED 2026-11-24 from repository evidence (commit f7b36c7).
 | Lint / typecheck / test / build | Lint, typecheck, build: N/A (none configured). Tests: `manage.py test` (Django TestCase) |
 | Browser tools / critical routes | Home (puzzle list), play page, result page, Django admin |
 | Existing CI / hooks / instructions | .github/workflows/tests.yml runs full `manage.py test` on push/PR with ANTHROPIC_API_KEY secret; no Git hooks; AGENTS.md/CLAUDE.md added by adoption |
-| Storage / auth / timezone | SQLite `db.sqlite3` (tracked, starter puzzles); Django sessions + auth; TIME_ZONE Asia/Seoul, LANGUAGE ko-kr |
+| Storage / auth / timezone | SQLite `db.sqlite3` (local only, untracked since 2026-11-24; starter data in game/fixtures/starter_puzzles.json); Django sessions + auth; TIME_ZONE Asia/Seoul, LANGUAGE ko-kr |
 | Deployment / access policy | Not deployed from this repo; DEPLOYMENT.md is a checklist only |
 | Baseline failures | None. 2026-11-24: django-check, migrations-check, test-offline (18 tests) PASS on Python 3.13.13 .venv before the Claude migration; billed API test not run (no `.env`) |
 

@@ -28,8 +28,13 @@ Only enable HSTS after HTTPS works correctly on the final domain.
 
 ## 3. Database
 
-The repository currently tracks `db.sqlite3` for the starter puzzle data.
+`db.sqlite3` is not tracked. Load starter puzzles once with
+`python manage.py loaddata starter_puzzles` and create an admin with `createsuperuser`.
 For real production use, move to a server-managed database and keep production data outside Git.
+
+Abuse limits (`GAME_AI_CALLS_PER_MINUTE`, `GAME_MAX_QUESTIONS_PER_GAME`) use the Django cache
+and the client IP. Configure a shared cache for multiple workers and forward the real client IP
+when running behind a reverse proxy.
 
 ## 4. Preflight Commands
 

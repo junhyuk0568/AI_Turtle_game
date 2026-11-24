@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.contrib import messages
+from django.core.cache import cache
 from django.db.models import Count
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
@@ -12,10 +14,37 @@ HINT_FIELDS = ("hint1", "hint2", "hint3")
 MAX_HINT_COUNT = len(HINT_FIELDS)
 MAX_QUESTION_LENGTH = 500
 MAX_ANSWER_LENGTH = 2000
+RATE_LIMIT_MESSAGE = "요청이 너무 많아요. 1분 정도 기다렸다가 다시 시도해 주세요."
 
 
-def _get_game_session(game_id):
-    return get_object_or_404(GameSession.objects.select_related("puzzle"), id=game_id)
+def _client_owns_game(request, game_session):
+    if game_session.user_id:
+        return request.user.is_authenticated and request.user.pk == game_session.user_id
+    session_key = request.session.session_key
+    return bool(session_key) and session_key == game_session.session_key
+
+
+def _get_game_session(request, game_id):
+    game_session = get_object_or_404(GameSession.objects.select_related("puzzle"), id=game_id)
+    # Game IDs are sequential, so never serve a game to anyone but its owner.
+    if not _client_owns_game(request, game_session):
+        raise Http404("게임을 찾을 수 없습니다.")
+    return game_session
+
+
+def _consume_ai_call_quota(request):
+    """Fixed one-minute window per client IP for billed Claude calls."""
+    limit = settings.AI_CALLS_PER_MINUTE
+    if limit <= 0:
+        return True
+    key = f"game:ai-calls:{request.META.get('REMOTE_ADDR', 'unknown')}"
+    if cache.add(key, 1, timeout=60):
+        return True
+    try:
+        return cache.incr(key) <= limit
+    except ValueError:
+        cache.set(key, 1, timeout=60)
+        return True
 
 
 def _redirect_if_cleared(game_session):
@@ -113,7 +142,7 @@ def start_game(request, puzzle_id):
 
 
 def play_view(request, game_id):
-    game_session = _get_game_session(game_id)
+    game_session = _get_game_session(request, game_id)
     cleared_response = _redirect_if_cleared(game_session)
     if cleared_response:
         return cleared_response
@@ -138,7 +167,7 @@ def play_view(request, game_id):
 
 
 def ask_question(request, game_id):
-    game_session = _get_game_session(game_id)
+    game_session = _get_game_session(request, game_id)
     cleared_response = _redirect_if_cleared(game_session)
     if cleared_response:
         return cleared_response
@@ -149,6 +178,13 @@ def ask_question(request, game_id):
             messages.error(request, f"질문은 {MAX_QUESTION_LENGTH}자 이하로 입력해주세요.")
         elif game_session.question_logs.filter(question_text=question_text).exists():
             messages.warning(request, "이미 같은 질문을 했습니다.")
+        elif question_text and game_session.question_logs.count() >= settings.MAX_QUESTIONS_PER_GAME:
+            messages.error(
+                request,
+                f"이 게임에서 할 수 있는 질문 {settings.MAX_QUESTIONS_PER_GAME}개를 모두 사용했어요. 정답을 말해 보세요.",
+            )
+        elif question_text and not _consume_ai_call_quota(request):
+            messages.error(request, RATE_LIMIT_MESSAGE)
         elif question_text:
             recent_logs = game_session.question_logs.order_by("-created_at")[: settings.QUESTION_HISTORY_LIMIT]
             history = [(log.question_text, log.answer_label) for log in reversed(list(recent_logs))]
@@ -177,7 +213,7 @@ def ask_question(request, game_id):
 
 
 def report_judgement(request, game_id, log_id):
-    game_session = _get_game_session(game_id)
+    game_session = _get_game_session(request, game_id)
     if request.method == "POST":
         log = get_object_or_404(QuestionLog, id=log_id, game_session=game_session)
         if log.reported_at is None:
@@ -188,7 +224,7 @@ def report_judgement(request, game_id, log_id):
 
 
 def use_hint(request, game_id):
-    game_session = _get_game_session(game_id)
+    game_session = _get_game_session(request, game_id)
     cleared_response = _redirect_if_cleared(game_session)
     if cleared_response:
         return cleared_response
@@ -204,7 +240,7 @@ def use_hint(request, game_id):
 
 
 def submit_final_answer(request, game_id):
-    game_session = _get_game_session(game_id)
+    game_session = _get_game_session(request, game_id)
     cleared_response = _redirect_if_cleared(game_session)
     if cleared_response:
         return cleared_response
@@ -213,6 +249,10 @@ def submit_final_answer(request, game_id):
         submitted_answer = request.POST.get("submitted_answer", "").strip()
         if len(submitted_answer) > MAX_ANSWER_LENGTH:
             messages.error(request, f"정답은 {MAX_ANSWER_LENGTH}자 이하로 입력해주세요.")
+            return redirect("game:play", game_id=game_session.id)
+
+        if submitted_answer and not _consume_ai_call_quota(request):
+            messages.error(request, RATE_LIMIT_MESSAGE)
             return redirect("game:play", game_id=game_session.id)
 
         try:
@@ -241,7 +281,7 @@ def submit_final_answer(request, game_id):
 
 
 def result_view(request, game_id):
-    game_session = _get_game_session(game_id)
+    game_session = _get_game_session(request, game_id)
     if game_session.status != GameSession.STATUS_CLEARED:
         return redirect("game:play", game_id=game_session.id)
 

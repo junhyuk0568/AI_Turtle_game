@@ -90,7 +90,9 @@
     "**/.env",
     ".env.*",
     "**/.env.*",
-    ".harness/web/state/**"
+    ".harness/web/state/**",
+    "*.sqlite3",
+    "**/*.sqlite3"
   ],
   "relatedFiles": [
     {
