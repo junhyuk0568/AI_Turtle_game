@@ -135,3 +135,13 @@ reason inside and keep the typed statement (cursor at the end).
 Verification: offline gate PASS (new tests: steady use across four minutes, refused and failed
 final answers); browser on the DB copy with a simulated exhausted budget: dialog stays open with
 the reason and text, no Claude call.
+
+## 2026-11-25 - Play page fits one screen; themed scrollbars
+Files: templates/game/base.html (body_class block, scrollbar styles), templates/game/play.html.
+Purpose (user report: the question box was cut off below the fold when a case opened): on
+screens wider than 900 px the play page is a full-height column, so the case summary, the
+record with its input box and the clue panel always fit; only the record and clue panel
+scroll. Header tightened slightly. Scrollbars are a thin ink line (dashed ruled track on
+paper, dark on the desk) that turns stamp red when held; Firefox gets matching colours.
+Verification: offline gate PASS; browser on the DB copy at 1880x950 and 1366x768 with a
+14-question record and a long scenario: no page scroll, input box fully visible.

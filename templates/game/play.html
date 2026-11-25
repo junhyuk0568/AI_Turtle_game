@@ -1,6 +1,8 @@
 {% extends "game/base.html" %}
 {% load game_extras %}
 
+{% block body_class %}play-page{% endblock %}
+
 {% block title %}{{ puzzle.title }} | 바다거북스프 사건 기록부{% endblock %}
 
 {% block topbar_action %}
@@ -17,20 +19,20 @@
     }
 
     .page-header h1 {
-        margin-bottom: 10px;
-        font-size: clamp(28px, 3.2vw, 42px);
+        margin-bottom: 8px;
+        font-size: clamp(26px, 3vw, 38px);
     }
 
     .scenario-inline {
-        max-width: 860px;
-        margin: 6px 0 14px;
+        max-width: 880px;
+        margin: 4px 0 10px;
     }
 
     .scenario-box {
-        padding: 16px 20px 16px 22px;
+        padding: 12px 20px 12px 22px;
         border-left: 4px solid var(--stamp);
-        font-size: 17px;
-        line-height: 1.85;
+        font-size: 16px;
+        line-height: 1.75;
         white-space: pre-wrap;
     }
 
@@ -391,6 +393,48 @@
         justify-content: flex-end;
         gap: 10px;
         margin-top: 16px;
+    }
+
+    /* Desktop: the whole case (summary, record, input, clues) fits one screen;
+       only the record and the clue panel scroll inside. */
+    @media (min-width: 901px) {
+        .play-page .app-shell {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            min-height: 640px;
+            padding-bottom: 10px;
+        }
+
+        .play-page .topbar {
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+        }
+
+        .play-page .page-header {
+            flex: none;
+            margin-bottom: 14px;
+        }
+
+        .play-page .game-room {
+            flex: 1 1 0;
+            min-height: 360px;
+            grid-template-rows: minmax(0, 1fr);
+            align-items: stretch;
+        }
+
+        .play-page .chat-room,
+        .play-page .side-panel {
+            position: static;
+            height: auto;
+            min-height: 0;
+        }
+
+        .play-page .site-footer {
+            flex: none;
+            margin-top: 10px;
+            padding-top: 8px;
+        }
     }
 
     @media (max-width: 900px) {

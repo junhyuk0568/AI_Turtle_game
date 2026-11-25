@@ -415,6 +415,63 @@
             border-left-color: var(--stamp);
         }
 
+        /* Scrollbars: a worn ink line on the desk and on paper; red ink when held. */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--desk);
+            border-left: 1px dashed var(--desk-line);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            border: 3px solid transparent;
+            background: #5a4b3b padding-box;
+            min-height: 40px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover,
+        ::-webkit-scrollbar-thumb:active {
+            background: var(--stamp) padding-box;
+        }
+
+        ::-webkit-scrollbar-corner {
+            background: transparent;
+        }
+
+        .paper::-webkit-scrollbar-track,
+        .paper ::-webkit-scrollbar-track {
+            background: repeating-linear-gradient(transparent 0 6px, rgba(107, 92, 67, 0.18) 6px 7px);
+            border-left: 1px dashed var(--paper-edge);
+        }
+
+        .paper::-webkit-scrollbar-thumb,
+        .paper ::-webkit-scrollbar-thumb {
+            background: var(--ink-soft) padding-box;
+        }
+
+        .paper::-webkit-scrollbar-thumb:hover,
+        .paper ::-webkit-scrollbar-thumb:hover,
+        .paper::-webkit-scrollbar-thumb:active,
+        .paper ::-webkit-scrollbar-thumb:active {
+            background: var(--stamp) padding-box;
+        }
+
+        /* Firefox has no ::-webkit-scrollbar; give it the same colours. */
+        @supports not selector(::-webkit-scrollbar) {
+            html {
+                scrollbar-color: #5a4b3b var(--desk);
+            }
+
+            .paper,
+            .paper * {
+                scrollbar-color: var(--ink-soft) transparent;
+                scrollbar-width: thin;
+            }
+        }
+
         @media (max-width: 760px) {
             .app-shell {
                 width: min(100% - 24px, 1120px);
@@ -445,7 +502,7 @@
     </style>
     {% block extra_style %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
     <main class="app-shell">
         <nav class="topbar" aria-label="상단 메뉴">
             <a class="brand" href="{% url 'game:home' %}" aria-label="바다거북스프 사건 기록부 처음으로">
