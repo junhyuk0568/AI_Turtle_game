@@ -1,22 +1,34 @@
 from django import template
 
-from ..services import LABEL_IRRELEVANT, LABEL_NO, LABEL_YES
+from ..services import FINAL_ANSWER_CORRECT, FINAL_ANSWER_INSUFFICIENT, LABEL_IRRELEVANT, LABEL_NO, LABEL_YES
 
 register = template.Library()
 
+# The host speaks in short plain sentences, as the play page promises.
 HOST_REPLIES = {
-    LABEL_YES: ("그렇습니다.", "yes"),
-    LABEL_NO: ("그렇지 않습니다.", "no"),
-    LABEL_IRRELEVANT: ("관계없습니다.", "irrelevant"),
+    LABEL_YES: ("그렇다.", "yes"),
+    LABEL_NO: ("아니다.", "no"),
+    LABEL_IRRELEVANT: ("관계없다.", "irrelevant"),
 }
 # Partial matches and vague questions both get the same short reply.
-DEFAULT_REPLY = ("그럴 수도 있습니다.", "maybe")
+DEFAULT_REPLY = ("그럴 수도.", "maybe")
+
+FINAL_VERDICTS = {
+    FINAL_ANSWER_CORRECT: "정답이다.",
+    FINAL_ANSWER_INSUFFICIENT: "아직 부족하다.",
+}
 
 
 @register.filter
 def host_reply(label):
     """Short game-master reply shown to players for an internal judgement label."""
     return HOST_REPLIES.get(label, DEFAULT_REPLY)[0]
+
+
+@register.filter
+def host_verdict(label):
+    """Host's short line for a final-answer judgement label."""
+    return FINAL_VERDICTS.get(label, label)
 
 
 @register.filter

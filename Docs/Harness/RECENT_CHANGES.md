@@ -113,3 +113,12 @@ directly on the desk set bold with a brighter muted colour; text on paper unchan
 Follow-up: "사건철" renamed to "사건 기록부" (wordmark, page titles, home label); Korean text
 wraps between words (word-break: keep-all) so mobile lines no longer split words.
 Gap: the old mascot images in static/game/img are no longer referenced (kept; delete if unwanted).
+
+## 2026-11-25 - Host speaks in short plain sentences
+Files: game/templatetags/game_extras.py (host_reply values, new host_verdict filter),
+templates/game/play.html, game/tests.py, README.
+Purpose: the play page intro promises short answers, so judgements read 그렇다 / 아니다 / 그럴 수도 /
+관계없다 and the final-answer feedback reads "정답이다." / "아직 부족하다." / "핵심 N개 중 M개를 맞혔다."
+Internal labels and the Claude contract are unchanged; system notices keep the polite style.
+Verification: offline gate PASS; browser shows all four stamps in the new wording.
+Follow-up: the unfamiliar word "미결" was replaced (header seal "사건", home label "미제 사건 기록부").

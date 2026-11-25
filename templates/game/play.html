@@ -1,4 +1,5 @@
 {% extends "game/base.html" %}
+{% load game_extras %}
 
 {% block title %}{{ puzzle.title }} | 바다거북스프 사건 기록부{% endblock %}
 
@@ -531,9 +532,9 @@
 
         {% if final_answer_feedback %}
             <div class="answer-feedback">
-                {{ final_answer_feedback.label }}
+                {{ final_answer_feedback.label|host_verdict }}
                 {% if final_answer_feedback.total_count %}
-                    <div>핵심 {{ final_answer_feedback.total_count }}개 중 {{ final_answer_feedback.met_count }}개를 맞혔어요.</div>
+                    <div>핵심 {{ final_answer_feedback.total_count }}개 중 {{ final_answer_feedback.met_count }}개를 맞혔다.</div>
                 {% endif %}
                 {% if final_answer_feedback.submitted_answer %}
                     <div class="meta">입력한 답: {{ final_answer_feedback.submitted_answer }}</div>

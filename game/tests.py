@@ -339,7 +339,7 @@ class GameFlowTests(TestCase):
 
         log = self.game_session.question_logs.get()
         self.assertEqual(log.revealed_checkpoints, [1])
-        self.assertContains(response, "그렇습니다.")
+        self.assertContains(response, "그렇다.")
         self.assertNotContains(response, "진실 탐색도")
         self.assertNotContains(response, "밝혀냈어요")
         self.assertNotContains(response, "핵심 질문")
@@ -359,11 +359,11 @@ class GameFlowTests(TestCase):
 
     def test_host_replies_are_short_phrases(self):
         cases = [
-            ("질문 1", LABEL_YES, "그렇습니다."),
-            ("질문 2", LABEL_NO, "그렇지 않습니다."),
-            ("질문 3", LABEL_PARTIAL, "그럴 수도 있습니다."),
-            ("질문 4", "질문이 모호합니다", "그럴 수도 있습니다."),
-            ("질문 5", "관계없습니다", "관계없습니다."),
+            ("질문 1", LABEL_YES, "그렇다."),
+            ("질문 2", LABEL_NO, "아니다."),
+            ("질문 3", LABEL_PARTIAL, "그럴 수도."),
+            ("질문 4", "질문이 모호합니다", "그럴 수도."),
+            ("질문 5", "관계없습니다", "관계없다."),
         ]
         for question, label, reply in cases:
             with self.subTest(label=label):
@@ -417,8 +417,9 @@ class GameFlowTests(TestCase):
                 follow=True,
             )
 
-        self.assertContains(response, FINAL_ANSWER_INSUFFICIENT)
-        self.assertContains(response, "핵심 3개 중 2개를 맞혔어요.")
+        self.assertContains(response, "아직 부족하다.")
+        self.assertNotContains(response, FINAL_ANSWER_INSUFFICIENT)
+        self.assertContains(response, "핵심 3개 중 2개를 맞혔다.")
         self.assertContains(response, "정답에는 핵심 키워드 3개가 모두 포함되어야 합니다.")
         self.game_session.refresh_from_db()
         self.assertEqual(self.game_session.status, GameSession.STATUS_PLAYING)
@@ -490,7 +491,7 @@ class AsyncQuestionTests(TestCase):
         self.assertTrue(data["ok"])
         self.assertEqual(data["question_count"], 1)
         self.assertIn("남자는 수프를 먹었나요?", data["html"])
-        self.assertIn("그렇습니다.", data["html"])
+        self.assertIn("그렇다.", data["html"])
         self.assertIn("판정이 이상해요", data["html"])
         self.assertIn("csrfmiddlewaretoken", data["html"])
         self.assertEqual(self.game_session.question_logs.count(), 1)
@@ -1140,11 +1141,11 @@ class ReplyFilterTests(TestCase):
         from game.templatetags.game_extras import host_reply, reply_class
 
         cases = {
-            LABEL_YES: ("그렇습니다.", "yes"),
-            LABEL_NO: ("그렇지 않습니다.", "no"),
-            LABEL_PARTIAL: ("그럴 수도 있습니다.", "maybe"),
-            "질문이 모호합니다": ("그럴 수도 있습니다.", "maybe"),
-            "관계없습니다": ("관계없습니다.", "irrelevant"),
+            LABEL_YES: ("그렇다.", "yes"),
+            LABEL_NO: ("아니다.", "no"),
+            LABEL_PARTIAL: ("그럴 수도.", "maybe"),
+            "질문이 모호합니다": ("그럴 수도.", "maybe"),
+            "관계없습니다": ("관계없다.", "irrelevant"),
         }
         for label, (reply, css) in cases.items():
             with self.subTest(label=label):
@@ -1166,8 +1167,8 @@ class ResultAndHomeTests(TestCase):
         self.assertContains(response, "질문 기록")
         content = response.content.decode()
         self.assertLess(content.index("첫 질문"), content.index("둘째 질문"))
-        self.assertContains(response, "그렇습니다.")
-        self.assertContains(response, "그럴 수도 있습니다.")
+        self.assertContains(response, "그렇다.")
+        self.assertContains(response, "그럴 수도.")
         self.assertNotContains(response, "판정이 이상해요")
 
     def test_result_page_without_questions(self):
