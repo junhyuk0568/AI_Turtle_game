@@ -271,14 +271,20 @@ def submit_final_answer(request, game_id):
 
     if request.method == "POST":
         submitted_answer = request.POST.get("submitted_answer", "").strip()
-        if len(submitted_answer) > MAX_ANSWER_LENGTH:
-            messages.error(request, f"정답은 {MAX_ANSWER_LENGTH}자 이하로 입력해주세요.")
+        feedback_key = f"final_answer_feedback_{game_session.id}"
+
+        def reopen_with_error(message):
+            # Keep the statement dialog open with the reason and the typed text;
+            # a page-top message is easy to miss once the dialog closes.
+            request.session[feedback_key] = {"error": message, "submitted_answer": submitted_answer}
             return redirect("game:play", game_id=game_session.id)
+
+        if len(submitted_answer) > MAX_ANSWER_LENGTH:
+            return reopen_with_error(f"정답은 {MAX_ANSWER_LENGTH}자 이하로 입력해주세요.")
 
         limit_message = consume_billed_call(request) if submitted_answer else None
         if limit_message:
-            messages.error(request, limit_message)
-            return redirect("game:play", game_id=game_session.id)
+            return reopen_with_error(limit_message)
 
         try:
             judgement = classify_final_answer(
@@ -288,14 +294,13 @@ def submit_final_answer(request, game_id):
                 submitted_answer=submitted_answer,
             )
         except AIServiceError as exc:
-            messages.error(request, str(exc))
-            return redirect("game:play", game_id=game_session.id)
+            return reopen_with_error(str(exc))
 
         if judgement.label == FINAL_ANSWER_CORRECT:
             game_session.mark_cleared(submitted_answer)
             return redirect("game:result", game_id=game_session.id)
 
-        request.session[f"final_answer_feedback_{game_session.id}"] = {
+        request.session[feedback_key] = {
             "label": judgement.label,
             "met_count": judgement.met_count,
             "total_count": judgement.total_count,

@@ -6,7 +6,8 @@ Three checks run before every billed call (question or final answer):
 3. Per-player daily cap: by account when logged in, else by guest session.
 """
 
-from datetime import datetime, time
+import time
+from datetime import datetime, time as day_time
 
 from django.conf import settings
 from django.core.cache import cache
@@ -22,7 +23,7 @@ BUDGET_MESSAGE = "오늘 준비한 진행자 이용량이 모두 소진됐어요
 
 def _start_of_today():
     today = timezone.localdate()
-    return timezone.make_aware(datetime.combine(today, time.min))
+    return timezone.make_aware(datetime.combine(today, day_time.min))
 
 
 def estimated_cost_usd(since=None):
@@ -47,17 +48,25 @@ def budget_exhausted():
     return budget > 0 and estimated_cost_usd() >= budget
 
 
+def _current_minute():
+    return int(time.time() // 60)
+
+
 def _consume_minute_window(request):
     limit = settings.AI_CALLS_PER_MINUTE
     if limit <= 0:
         return True
-    key = f"game:ai-calls:{request.META.get('REMOTE_ADDR', 'unknown')}"
-    if cache.add(key, 1, timeout=60):
+    # One key per clock minute. Cache backends such as the database cache re-save a
+    # key with the default timeout on incr(), so a single key would never expire
+    # while a player keeps asking; a fresh key each minute always starts at zero.
+    minute = _current_minute()
+    key = f"game:ai-calls:{request.META.get('REMOTE_ADDR', 'unknown')}:{minute}"
+    if cache.add(key, 1, timeout=120):
         return True
     try:
         return cache.incr(key) <= limit
     except ValueError:
-        cache.set(key, 1, timeout=60)
+        cache.set(key, 1, timeout=120)
         return True
 
 

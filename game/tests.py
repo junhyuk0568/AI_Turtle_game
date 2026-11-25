@@ -730,6 +730,49 @@ class AbuseLimitTests(TestCase):
         grader.assert_not_called()
         self.assertContains(response, "요청이 너무 많아요.")
 
+    @override_settings(AI_CALLS_PER_MINUTE=2)
+    def test_minute_window_starts_over_each_minute_even_with_steady_use(self):
+        # The database cache re-saves keys with a 5-minute timeout on incr(), which
+        # once kept a single window alive for as long as a player kept asking.
+        minute_now = [29_000_000]
+        with patch("game.limits._current_minute", side_effect=lambda: minute_now[0]), patch(
+            "game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)
+        ) as classifier:
+            for minute in range(4):
+                minute_now[0] = 29_000_000 + minute
+                self._ask(f"질문 {minute}-a")
+                self._ask(f"질문 {minute}-b")
+                response = self._ask(f"질문 {minute}-c")
+                self.assertContains(response, "요청이 너무 많아요.")
+
+        self.assertEqual(classifier.call_count, 8)
+
+    @override_settings(AI_CALLS_PER_MINUTE=1)
+    def test_refused_final_answer_keeps_dialog_open_with_reason_and_text(self):
+        with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)):
+            self._ask("질문 1")
+        response = self.client.post(
+            reverse("game:submit_final_answer", args=[self.game_session.id]),
+            {"submitted_answer": "가게 안에 어린아이가 갇혀 있었다."},
+            follow=True,
+        )
+
+        self.assertContains(response, 'class="answer-modal is-open"')
+        self.assertContains(response, '<div class="answer-feedback" role="alert">요청이 너무 많아요.')
+        self.assertContains(response, ">가게 안에 어린아이가 갇혀 있었다.</textarea>")
+
+    def test_final_answer_service_error_keeps_dialog_open(self):
+        with patch("game.views.classify_final_answer", side_effect=AIServiceError("Claude API 호출에 실패했습니다.")):
+            response = self.client.post(
+                reverse("game:submit_final_answer", args=[self.game_session.id]),
+                {"submitted_answer": "답"},
+                follow=True,
+            )
+
+        self.assertContains(response, 'class="answer-modal is-open"')
+        self.assertContains(response, "Claude API 호출에 실패했습니다.")
+        self.assertContains(response, ">답</textarea>")
+
     @override_settings(AI_CALLS_PER_MINUTE=0, MAX_QUESTIONS_PER_GAME=1)
     def test_questions_per_game_are_capped(self):
         with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)) as classifier:

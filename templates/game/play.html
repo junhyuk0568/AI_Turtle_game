@@ -526,21 +526,20 @@
             <p class="meta">정답에는 핵심 키워드 {{ required_keyword_count }}개가 모두 포함되어야 합니다.</p>
         {% endif %}
 
-        {% if final_answer_feedback %}
+        {% if final_answer_feedback.error %}
+            <div class="answer-feedback" role="alert">{{ final_answer_feedback.error }}</div>
+        {% elif final_answer_feedback %}
             <div class="answer-feedback">
                 {{ final_answer_feedback.label|host_verdict }}
                 {% if final_answer_feedback.total_count %}
                     <div>핵심 {{ final_answer_feedback.total_count }}개 중 {{ final_answer_feedback.met_count }}개를 맞혔다.</div>
-                {% endif %}
-                {% if final_answer_feedback.submitted_answer %}
-                    <div class="meta">입력한 답: {{ final_answer_feedback.submitted_answer }}</div>
                 {% endif %}
             </div>
         {% endif %}
 
         <form method="post" action="{% url 'game:submit_final_answer' game_session.id %}">
             {% csrf_token %}
-            <textarea name="submitted_answer" maxlength="2000" aria-label="최종 진술" required></textarea>
+            <textarea name="submitted_answer" maxlength="2000" aria-label="최종 진술" required>{{ final_answer_feedback.submitted_answer|default:"" }}</textarea>
             <div class="answer-dialog-actions">
                 <button class="button secondary" type="button" data-answer-close>계속 수사하기</button>
                 <button class="button" type="submit">진술서 제출</button>
@@ -567,7 +566,16 @@
             chatBody.scrollTop = chatBody.scrollHeight;
         }
 
-        questionInput.focus();
+        const reopenedAnswer = answerModal && answerModal.classList.contains("is-open")
+            ? answerModal.querySelector('textarea[name="submitted_answer"]')
+            : null;
+        if (reopenedAnswer) {
+            // Back from a rejected statement: keep editing it, cursor at the end.
+            reopenedAnswer.focus();
+            reopenedAnswer.setSelectionRange(reopenedAnswer.value.length, reopenedAnswer.value.length);
+        } else {
+            questionInput.focus();
+        }
 
         forms.forEach(function (form) {
             if (form.hasAttribute("data-async-question")) {

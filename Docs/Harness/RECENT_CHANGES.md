@@ -123,3 +123,15 @@ Internal labels and the Claude contract are unchanged; system notices keep the p
 Verification: offline gate PASS; browser shows all four stamps in the new wording.
 Follow-up: the unfamiliar word "미결" was replaced (header seal "사건", home label "미제 사건 기록부").
 Follow-up: example placeholder text removed from the question and final-statement boxes (aria-labels added).
+
+## 2026-11-25 - Fix: minute limit never reset; final-answer dialog closed silently
+Files: game/limits.py, game/views.py, templates/game/play.html, game/tests.py.
+Cause (user report: statement dialog "just closed" on 깨진 유리창): Django's database cache
+re-saves a key with the default 300 s timeout on incr(), so the per-IP minute window kept
+growing while a player kept playing; the 11th call in about three minutes was refused. The
+refusal was a page-top message hidden behind the auto-scroll, and the dialog closed.
+Fix: one cache key per clock minute; refused or failed final answers reopen the dialog with the
+reason inside and keep the typed statement (cursor at the end).
+Verification: offline gate PASS (new tests: steady use across four minutes, refused and failed
+final answers); browser on the DB copy with a simulated exhausted budget: dialog stays open with
+the reason and text, no Claude call.
