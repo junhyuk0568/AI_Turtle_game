@@ -1,7 +1,8 @@
 # Active Context
 
-Status: Idle (all planned P0-P2 work done; deployment not started)
-Active plan: None (history in Docs/Harness/Plans/001-003)
+Status: In progress - rankings with Google login (multiplayer type A)
+Active plan: Docs/Harness/Plans/004-ranking-and-login.md (phase 1 done and live
+Google login verified locally, not committed yet; phases 2-4 next)
 
 ## Current work
 Claude game master is live locally on claude-sonnet-5-5: structured judging with
@@ -54,8 +55,9 @@ C. Player experience (P2)
 E. Small follow-ups
   E1. DONE: avatars and header logo served as WebP (3.4 MB -> 38 KB); original PNGs
       kept as source art.
-  E2. New puzzle truths must not go into the public repo (fixture is public);
-      add them through the admin into the local/production DB only.
+  E2. DONE: export_puzzles / import_puzzles commands (JSON, upsert by title, with
+      test questions, --dry-run). The 5 local puzzles are exported to private/puzzles.json
+      (ignored; staged policy blocks private/**). Fresh-DB import verified.
 D. Deployment (P3)
   D1. Pick hosting; add WSGI server, static files, managed DB, shared cache,
       real client IP forwarding; run check --deploy.

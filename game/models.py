@@ -191,3 +191,19 @@ class AIUsageLog(models.Model):
 
     def __str__(self):
         return f"{self.operation} - {self.total_tokens} tokens"
+
+
+NICKNAME_PATTERN = r"^[0-9A-Za-z가-힣_]{2,12}$"
+RESERVED_NICKNAMES = {"admin", "administrator", "root", "관리자", "운영자", "진행자", "게스트"}
+
+
+class PlayerProfile(models.Model):
+    """Public identity on rankings. Google name and email are never shown."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="player_profile")
+    nickname = models.CharField(max_length=12, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.nickname

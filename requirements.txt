@@ -1,3 +1,4 @@
 Django==6.0.3
 anthropic==2.13.0
 python-dotenv==1.2.2
+django-allauth[socialaccount]==65.22.1

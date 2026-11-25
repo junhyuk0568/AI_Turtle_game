@@ -72,6 +72,17 @@ GAME_CLAUDE_EFFORT=low
 - 결과 화면에서 내가 한 질문과 진행자 답변을 순서대로 다시 볼 수 있습니다.
 - 문제 목록에서 이미 푼 문제에는 `클리어 · 최고 N점`이 표시됩니다.
 
+## 로그인 (구글)
+
+- 게스트로도 플레이할 수 있고, 구글로 로그인하면 기록이 계정에 남습니다. 게스트로 하던 게임은 로그인할 때 계정으로 옮겨집니다.
+- 처음 로그인하면 닉네임(2~12자, 한글·영문·숫자·`_`)을 정합니다. 다른 사람에게는 닉네임만 보이고 구글 이름과 이메일은 보이지 않습니다.
+- 화면 아래의 `개인정보 처리방침`, `계정 삭제`(닉네임·연결 정보·게임 기록 삭제)를 제공합니다.
+- `.env`의 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`이 비어 있으면 로그인 버튼이 나타나지 않습니다.
+- 구글 이메일이 이미 다른 계정(예: 관리자 계정)에 등록되어 있으면 보안상 자동 가입되지 않고 "로그인할 수 없어요" 안내가 나옵니다. 관리자 계정은 이메일을 비워 두고 플레이용 구글 계정과 분리하세요.
+- Google Cloud Console의 OAuth 클라이언트(웹 애플리케이션)에 승인된 리디렉션 URI를 등록합니다.
+  - 로컬: `http://localhost:8000/accounts/google/login/callback/`
+  - 운영: `https://<도메인>/accounts/google/login/callback/`
+
 ## 남용 방지
 
 - 게임은 만든 사람(같은 브라우저 세션, 또는 로그인한 사용자)만 열 수 있습니다. 다른 사람의 게임 번호로 접근하면 404가 됩니다.
@@ -87,6 +98,21 @@ GAME_CLAUDE_EFFORT=low
 - `AI 판정 기준 생성`은 먼저 확인 화면을 보여줍니다. **빈 칸만 채우기**는 직접 다듬은 항목을 그대로 두고, **모두 덮어쓰기**는 전부 새로 만듭니다.
 - 체크포인트 힌트는 체크포인트와 줄 단위로 짝을 이루므로, 체크포인트를 새로 만들 때만 함께 생성됩니다.
 - 목록 화면의 일괄 작업은 빈 칸만 채우며, 채울 칸이 없는 문제는 API를 호출하지 않고 건너뜁니다.
+
+## 문제 옮기기 (정답 비공개)
+
+기본 문제(`starter_puzzles`)만 공개 저장소에 있습니다. 직접 추가한 문제의 정답은 Git에 올리지 않고 비공개 파일로 옮깁니다.
+
+```powershell
+# 내 PC에서: 기본 문제를 뺀 나머지를 내보내기 (private/ 폴더는 Git에서 제외됨)
+.venv\Scripts\python.exe manage.py export_puzzles private/puzzles.json --exclude-starter
+
+# 서버에서: 파일을 비공개 경로로 복사한 뒤 확인하고 불러오기
+python manage.py import_puzzles private/puzzles.json --dry-run
+python manage.py import_puzzles private/puzzles.json
+```
+
+불러오기는 제목 기준으로 추가하거나 갱신하고, 테스트 질문도 함께 옮깁니다. 같은 파일을 여러 번 불러와도 중복되지 않습니다.
 
 ## GitHub Actions
 

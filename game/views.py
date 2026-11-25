@@ -8,6 +8,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 
+from .accounts import remember_guest_key
 from .models import GameSession, Puzzle, QuestionLog
 from .services import AIServiceError, FINAL_ANSWER_CORRECT, classify_final_answer, classify_question
 
@@ -107,6 +108,8 @@ def _visitor_games(request):
 
 
 def home(request):
+    if not request.user.is_authenticated:
+        remember_guest_key(request)
     puzzles = list(Puzzle.objects.filter(is_active=True))
     games = _visitor_games(request).filter(puzzle__is_active=True).annotate(question_count_value=Count("question_logs"))
     active_games = games.filter(status=GameSession.STATUS_PLAYING).select_related("puzzle")
@@ -125,6 +128,8 @@ def start_game(request, puzzle_id):
 
     if not request.session.session_key:
         request.session.create()
+    if not request.user.is_authenticated:
+        remember_guest_key(request)
 
     lookup = {
         "puzzle": puzzle,

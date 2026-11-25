@@ -9,7 +9,7 @@ from django.test import RequestFactory, TestCase, override_settings, tag
 from django.urls import reverse
 
 from .admin import QuestionLogAdmin
-from .models import AIUsageLog, GameSession, Puzzle, QuestionLog, QuestionTestCase
+from .models import AIUsageLog, GameSession, PlayerProfile, Puzzle, QuestionLog, QuestionTestCase
 from .services import (
     FALLBACK_BETA,
     FINAL_ANSWER_CORRECT,
@@ -659,6 +659,8 @@ class GameOwnershipTests(TestCase):
     def test_logged_in_owner_keeps_access_and_others_do_not(self):
         owner = get_user_model().objects.create_user("owner", password="pw-owner-123")
         other = get_user_model().objects.create_user("other", password="pw-other-123")
+        PlayerProfile.objects.create(user=owner, nickname="owner")
+        PlayerProfile.objects.create(user=other, nickname="other")
         game_session = GameSession.objects.create(puzzle=self.puzzle, user=owner)
         url = reverse("game:play", args=[game_session.id])
 
@@ -935,6 +937,275 @@ class ResultAndHomeTests(TestCase):
         self.assertContains(response, "game-logo.webp")
         for large_png in ("admin-image.png", "user-image.png", "game-logo-transparent.png"):
             self.assertNotContains(response, large_png)
+
+
+class PuzzleTransferCommandTests(TestCase):
+    fixtures = ["starter_puzzles"]
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = f"{self.tmp.name}/private/puzzles.json"
+        self.custom = Puzzle.objects.create(
+            title="비공개 문제",
+            scenario="상황",
+            answer_text="진실",
+            answer_checkpoints="c1\nc2",
+            checkpoint_hints="h1\nh2",
+            hint1="고정 힌트",
+            is_active=True,
+        )
+        QuestionTestCase.objects.create(puzzle=self.custom, question_text="질문?", expected_label=LABEL_YES, memo="m")
+
+    def _call(self, *args):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command(*args, stdout=out)
+        return out.getvalue()
+
+    def test_export_excluding_starter_writes_only_new_puzzles(self):
+        self._call("export_puzzles", self.path, "--exclude-starter")
+
+        data = json.load(open(self.path, encoding="utf-8"))
+        self.assertEqual([p["title"] for p in data["puzzles"]], ["비공개 문제"])
+        self.assertEqual(data["puzzles"][0]["answer_text"], "진실")
+        self.assertEqual(data["puzzles"][0]["test_cases"][0]["question_text"], "질문?")
+
+    def test_round_trip_into_a_database_with_other_ids(self):
+        self._call("export_puzzles", self.path, "--exclude-starter")
+        self.custom.delete()
+        Puzzle.objects.create(title="다른 문제", scenario="s", answer_text="a")  # takes the next id
+
+        out = self._call("import_puzzles", self.path)
+
+        puzzle = Puzzle.objects.get(title="비공개 문제")
+        self.assertEqual(puzzle.get_checkpoint_hints(), ["h1", "h2"])
+        self.assertTrue(puzzle.is_active)
+        self.assertEqual(puzzle.question_test_cases.get().memo, "m")
+        self.assertIn("1 new", out)
+
+    def test_import_twice_updates_instead_of_duplicating(self):
+        self._call("export_puzzles", self.path, "--exclude-starter")
+        self.custom.answer_text = "바뀐 진실"
+        self.custom.save()
+
+        self._call("import_puzzles", self.path)
+
+        self.assertEqual(Puzzle.objects.filter(title="비공개 문제").count(), 1)
+        self.assertEqual(Puzzle.objects.get(title="비공개 문제").answer_text, "진실")
+        self.assertEqual(QuestionTestCase.objects.filter(puzzle__title="비공개 문제").count(), 1)
+
+    def test_dry_run_saves_nothing(self):
+        self._call("export_puzzles", self.path, "--exclude-starter")
+        self.custom.delete()
+
+        out = self._call("import_puzzles", self.path, "--dry-run")
+
+        self.assertIn("Dry run", out)
+        self.assertFalse(Puzzle.objects.filter(title="비공개 문제").exists())
+
+    def test_rejects_bad_files(self):
+        from django.core.management.base import CommandError
+
+        with open(self.path.replace("/private/puzzles.json", "/bad.json"), "w", encoding="utf-8") as handle:
+            json.dump({"version": 99, "puzzles": []}, handle)
+
+        with self.assertRaises(CommandError):
+            self._call("import_puzzles", self.path.replace("/private/puzzles.json", "/bad.json"))
+        with self.assertRaises(CommandError):
+            self._call("import_puzzles", f"{self.tmp.name}/missing.json")
+
+
+GOOGLE_TEST_SETTINGS = {
+    "GOOGLE_LOGIN_ENABLED": True,
+    "SOCIALACCOUNT_PROVIDERS": {
+        "google": {
+            "APPS": [{"client_id": "test-client", "secret": "test-secret", "key": ""}],
+            "SCOPE": ["profile", "email"],
+        }
+    },
+}
+
+
+class AccountTests(TestCase):
+    def setUp(self):
+        self.puzzle = Puzzle.objects.create(title="계정 문제", scenario="s", answer_text="a")
+        self.user = get_user_model().objects.create_user("google-user", email="player@example.com")
+
+    def _with_profile(self, nickname="추리왕"):
+        PlayerProfile.objects.create(user=self.user, nickname=nickname)
+
+    # Login button -------------------------------------------------------
+    @override_settings(GOOGLE_LOGIN_ENABLED=False)
+    def test_login_button_hidden_without_google_keys(self):
+        response = self.client.get(reverse("game:home"))
+
+        self.assertNotContains(response, "Google로 로그인")
+        self.assertContains(response, "개인정보 처리방침")
+
+    @override_settings(**GOOGLE_TEST_SETTINGS)
+    def test_login_button_posts_to_google_provider(self):
+        response = self.client.get(reverse("game:home"))
+
+        self.assertContains(response, "Google로 로그인")
+        self.assertContains(response, "/accounts/google/login/")
+
+    # Guest games move to the account -------------------------------------
+    def test_login_claims_games_from_the_guest_session(self):
+        from django.contrib.auth import login
+        from django.contrib.sessions.backends.db import SessionStore
+
+        self.client.get(reverse("game:start_game", args=[self.puzzle.id]))
+        guest_game = GameSession.objects.get()
+        self.assertIsNone(guest_game.user)
+        other_guest = GameSession.objects.create(puzzle=self.puzzle, session_key="someone-else")
+
+        request = RequestFactory().get("/")
+        request.session = SessionStore(session_key=self.client.session.session_key)
+        login(request, self.user, backend="django.contrib.auth.backends.ModelBackend")
+
+        guest_game.refresh_from_db()
+        other_guest.refresh_from_db()
+        self.assertEqual(guest_game.user, self.user)
+        self.assertIsNone(other_guest.user)
+
+    def test_claimed_game_is_reachable_after_login(self):
+        from game.accounts import claim_guest_games
+
+        game_session = _owned_game(self.client, puzzle=self.puzzle)
+        claim_guest_games(self.user, game_session.session_key)
+        self._with_profile()
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("game:play", args=[game_session.id]))
+
+        self.assertEqual(response.status_code, 200)
+
+    # Nickname required ------------------------------------------------------
+    def test_logged_in_player_without_nickname_is_sent_to_nickname_page(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("game:home"))
+
+        self.assertRedirects(response, f"{reverse('game:nickname')}?next=/")
+
+    def test_json_requests_get_a_redirect_target_instead(self):
+        game_session = GameSession.objects.create(puzzle=self.puzzle, user=self.user)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("game:ask_question", args=[game_session.id]),
+            {"question_text": "q"},
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertTrue(response.json()["redirect"].startswith(reverse("game:nickname")))
+
+    def test_staff_are_not_forced_to_pick_a_nickname(self):
+        staff = get_user_model().objects.create_user("staff-user", is_staff=True)
+        self.client.force_login(staff)
+
+        self.assertEqual(self.client.get(reverse("game:home")).status_code, 200)
+
+    def test_nickname_rules(self):
+        PlayerProfile.objects.create(
+            user=get_user_model().objects.create_user("other"), nickname="Taken"
+        )
+        self.client.force_login(self.user)
+        cases = {
+            "a": "2~12자",
+            "공백 있는 이름": "2~12자",
+            "<b>굵게</b>": "2~12자",
+            "관리자": "쓸 수 없는",
+            "taken": "이미 다른 사람이",
+        }
+        for nickname, error in cases.items():
+            with self.subTest(nickname=nickname):
+                response = self.client.post(reverse("game:nickname"), {"nickname": nickname})
+                self.assertContains(response, error)
+        self.assertFalse(PlayerProfile.objects.filter(user=self.user).exists())
+
+    def test_valid_nickname_is_saved_and_follows_safe_next_only(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("game:nickname"), {"nickname": "추리왕_1", "next": "/play/start/1/"})
+        self.assertRedirects(response, "/play/start/1/", fetch_redirect_response=False)
+        self.assertEqual(self.user.player_profile.nickname, "추리왕_1")
+
+        response = self.client.post(reverse("game:nickname"), {"nickname": "추리왕_2", "next": "https://evil.example/"})
+        self.assertRedirects(response, reverse("game:home"), fetch_redirect_response=False)
+        self.user.player_profile.refresh_from_db()
+        self.assertEqual(self.user.player_profile.nickname, "추리왕_2")
+
+    def test_header_shows_nickname_but_never_the_email(self):
+        self._with_profile()
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("game:home"))
+
+        self.assertContains(response, "추리왕")
+        self.assertContains(response, "로그아웃")
+        self.assertNotContains(response, "player@example.com")
+
+    def test_logout_is_post_and_ends_the_session(self):
+        self._with_profile()
+        self.client.force_login(self.user)
+
+        self.client.post(reverse("account_logout"))
+
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_allauth_pages_use_the_site_layout(self):
+        self._with_profile()
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("account_logout"))
+
+        self.assertContains(response, "game-logo.webp")
+        self.assertContains(response, "개인정보 처리방침")
+        self.assertNotContains(response, "Menu:")
+
+    def test_email_conflict_signup_page_explains_instead_of_asking_username(self):
+        from django.contrib.auth.models import AnonymousUser
+        from django.template.loader import render_to_string
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/accounts/3rdparty/signup/")
+        request.user = AnonymousUser()
+
+        html = render_to_string("socialaccount/signup.html", request=request)
+
+        self.assertIn("로그인할 수 없어요", html)
+        self.assertNotIn('name="username"', html)
+
+    # Privacy and deletion ------------------------------------------------
+    def test_privacy_page_is_public(self):
+        response = self.client.get(reverse("game:privacy"))
+
+        self.assertContains(response, "수집하는 정보")
+
+    def test_account_deletion_requires_confirmation_and_removes_records(self):
+        self._with_profile()
+        game_session = GameSession.objects.create(puzzle=self.puzzle, user=self.user)
+        QuestionLog.objects.create(game_session=game_session, question_text="q", answer_label=LABEL_NO)
+        self.client.force_login(self.user)
+
+        self.client.post(reverse("game:delete_account"), {"confirm": "아니요"})
+        self.assertTrue(get_user_model().objects.filter(pk=self.user.pk).exists())
+
+        response = self.client.post(reverse("game:delete_account"), {"confirm": "계정 삭제"}, follow=True)
+
+        self.assertFalse(get_user_model().objects.filter(pk=self.user.pk).exists())
+        self.assertFalse(PlayerProfile.objects.exists())
+        self.assertFalse(GameSession.objects.filter(pk=game_session.pk).exists())
+        self.assertFalse(QuestionLog.objects.exists())
+        self.assertContains(response, "계정과 플레이 기록을 삭제했어요.")
+        self.assertNotIn("_auth_user_id", self.client.session)
 
 
 class AIUsageLogTests(TestCase):

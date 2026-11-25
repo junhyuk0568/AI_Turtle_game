@@ -1,0 +1,9 @@
+{% extends "game/base.html" %}
+{% comment %}
+Every django-allauth page (login cancelled, errors, logout confirm, ...) uses the
+site layout instead of allauth's unstyled default.
+{% endcomment %}
+
+{% block title %}{% block head_title %}{% endblock head_title %} | AI 바다거북스프{% endblock title %}
+
+{% block extra_style %}{% block extra_head %}{% endblock extra_head %}{% endblock extra_style %}

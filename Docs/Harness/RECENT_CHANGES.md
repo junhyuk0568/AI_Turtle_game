@@ -47,3 +47,24 @@ Verification: offline gate PASS (73 tests); browser: result replay, home badge, 
 ## 2026-11-24 - Smaller images (E1)
 Files: static/game/img/{admin-avatar,user-avatar,game-logo}.webp, templates/game/{base,play,_question_exchange}.html.
 Purpose: avatars (42 px) and header logo were 3.4 MB of PNG; now 38 KB of WebP.
+
+## 2026-11-24 - Private puzzle transfer (E2)
+Files: game/management/{puzzle_io.py,commands/export_puzzles.py,commands/import_puzzles.py},
+game/tests.py, .gitignore, .harness/web/config.json, README.md, DEPLOYMENT.md.
+Purpose: move puzzles with answers to a server without committing them.
+Verification: offline gate PASS (79 tests); fresh scratch DB: migrate + loaddata + import -> 6 puzzles.
+
+## 2026-11-25 - Google login and nicknames (plan 004 phase 1)
+Files: config/settings.py, config/urls.py, requirements.txt (django-allauth 65.22.1),
+game/{accounts,account_views,forms,middleware,context_processors,apps,models,admin,views,urls,tests}.py,
+migration 0012, templates/game/{base,nickname,account_delete,privacy}.html, env examples, README, DEPLOYMENT.
+Verification: offline gate PASS (92 tests); browser on a DB copy: guest header/footer, privacy page,
+nickname redirect with next, nickname save, header nickname without email, logout.
+Live check (user's local OAuth client, localhost:8000): guest game started, Google sign-in,
+account created with no usable password and no stored tokens, nickname saved, guest game
+moved to the account; no server errors. The first attempt fell back to allauth's signup form
+because the admin account had the same email: admin email cleared (admin stays separate
+from the player account), all allauth pages now use the site layout
+(templates/allauth/layouts/base.html) and the email-conflict fallback explains instead of
+asking for a username (templates/socialaccount/signup.html). Offline gate PASS (94 tests).
+Google sign-in now shows the app name "AI 바다거북스프" (user renamed it in Branding).

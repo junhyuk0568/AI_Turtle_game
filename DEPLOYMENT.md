@@ -13,6 +13,8 @@ Required changes:
 
 - `ANTHROPIC_API_KEY`: production Claude API key
 - `GAME_CLAUDE_MODEL`, `GAME_CLAUDE_EFFORT`: model and effort for judging (see README)
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: Google OAuth client; register
+  `https://<domain>/accounts/google/login/callback/` as an authorized redirect URI
 - `DJANGO_SECRET_KEY`: long random secret, never reused from local dev
 - `DJANGO_ALLOWED_HOSTS`: production domain names
 - `DJANGO_DEBUG=False`
@@ -30,6 +32,8 @@ Only enable HSTS after HTTPS works correctly on the final domain.
 
 `db.sqlite3` is not tracked. Load starter puzzles once with
 `python manage.py loaddata starter_puzzles` and create an admin with `createsuperuser`.
+Other puzzles are exported locally with `export_puzzles private/puzzles.json --exclude-starter`,
+copied to the server privately, and loaded with `import_puzzles` (upsert by title).
 For real production use, move to a server-managed database and keep production data outside Git.
 
 Abuse limits (`GAME_AI_CALLS_PER_MINUTE`, `GAME_MAX_QUESTIONS_PER_GAME`) use the Django cache

@@ -4,7 +4,7 @@ from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 
-from .models import AIUsageLog, GameSession, Puzzle, QuestionLog, QuestionTestCase
+from .models import AIUsageLog, GameSession, PlayerProfile, Puzzle, QuestionLog, QuestionTestCase
 from .services import AIServiceError, classify_question, generate_puzzle_criteria
 
 
@@ -381,3 +381,10 @@ class AIUsageLogAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(PlayerProfile)
+class PlayerProfileAdmin(admin.ModelAdmin):
+    list_display = ("nickname", "user", "created_at", "updated_at")
+    search_fields = ("nickname",)
+    readonly_fields = ("created_at", "updated_at")

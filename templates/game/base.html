@@ -1,4 +1,4 @@
-{% load static %}
+{% load static socialaccount %}
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -56,6 +56,62 @@
             justify-content: space-between;
             gap: 16px;
             margin-bottom: 18px;
+        }
+
+        .topbar-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .inline-form {
+            margin: 0;
+        }
+
+        .nav-button {
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .site-footer {
+            display: flex;
+            gap: 16px;
+            margin-top: 32px;
+            padding-top: 16px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .site-footer a {
+            color: var(--muted);
+        }
+
+        .form-panel {
+            max-width: 560px;
+            padding: 24px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: var(--shadow);
+        }
+
+        .form-panel input[type="text"] {
+            width: 100%;
+            min-height: 44px;
+            margin: 8px 0;
+            padding: 0 12px;
+            border: 1px solid #c9d6d1;
+            border-radius: 8px;
+            font: inherit;
+        }
+
+        .form-error {
+            color: var(--no);
+            font-weight: 700;
         }
 
         .brand {
@@ -223,7 +279,23 @@
             <a class="brand" href="{% url 'game:home' %}">
                 <img class="brand-logo" src="{% static 'game/img/game-logo.webp' %}" alt="AI 바다거북스프">
             </a>
-            {% block topbar_action %}{% endblock %}
+            <div class="topbar-actions">
+                {% block topbar_action %}{% endblock %}
+                {% if user.is_authenticated %}
+                    <a class="nav-link" href="{% url 'game:nickname' %}" title="닉네임 바꾸기">
+                        {% if user.player_profile %}{{ user.player_profile.nickname }}{% else %}닉네임 정하기{% endif %}
+                    </a>
+                    <form class="inline-form" method="post" action="{% url 'account_logout' %}">
+                        {% csrf_token %}
+                        <button class="nav-link nav-button" type="submit">로그아웃</button>
+                    </form>
+                {% elif google_login_enabled %}
+                    <form class="inline-form" method="post" action="{% provider_login_url 'google' %}">
+                        {% csrf_token %}
+                        <button class="nav-link nav-button" type="submit">Google로 로그인</button>
+                    </form>
+                {% endif %}
+            </div>
         </nav>
 
         {% if messages %}
@@ -235,6 +307,13 @@
         {% endif %}
 
         {% block content %}{% endblock %}
+
+        <footer class="site-footer">
+            <a href="{% url 'game:privacy' %}">개인정보 처리방침</a>
+            {% if user.is_authenticated %}
+                <a href="{% url 'game:delete_account' %}">계정 삭제</a>
+            {% endif %}
+        </footer>
     </main>
 </body>
 </html>

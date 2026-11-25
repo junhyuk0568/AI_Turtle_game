@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .account_views import delete_account_view, nickname_view, privacy_view
 from .views import (
     ask_question,
     home,
@@ -16,6 +17,9 @@ app_name = "game"
 
 urlpatterns = [
     path("", home, name="home"),
+    path("me/nickname/", nickname_view, name="nickname"),
+    path("me/delete/", delete_account_view, name="delete_account"),
+    path("privacy/", privacy_view, name="privacy"),
     path("play/start/<int:puzzle_id>/", start_game, name="start_game"),
     path("play/<int:game_id>/", play_view, name="play"),
     path("play/<int:game_id>/ask/", ask_question, name="ask_question"),

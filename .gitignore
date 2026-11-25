@@ -14,3 +14,6 @@ venv/
 
 # Local database (starter data lives in game/fixtures/starter_puzzles.json)
 db.sqlite3
+
+# Private puzzle exports (contain answers)
+private/

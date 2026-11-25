@@ -1,0 +1,21 @@
+{% extends "game/base.html" %}
+
+{% block title %}계정 삭제 | AI 바다거북스프{% endblock %}
+
+{% block content %}
+<header class="page-header">
+    <p class="eyebrow">내 정보</p>
+    <h1>계정 삭제</h1>
+    <p class="lead">계정을 삭제하면 닉네임, 구글 계정 연결 정보, 모든 게임 기록과 순위 기록이 함께 지워지고 되돌릴 수 없어요.</p>
+</header>
+
+<section class="form-panel">
+    <form method="post">
+        {% csrf_token %}
+        <label for="id_confirm">계속하려면 <strong>{{ confirm_text }}</strong>를 입력하세요.</label>
+        <input type="text" name="confirm" id="id_confirm" autocomplete="off" required>
+        <button class="button warning" type="submit">계정 삭제</button>
+        <a class="button secondary" href="{% url 'game:home' %}">취소</a>
+    </form>
+</section>
+{% endblock %}
