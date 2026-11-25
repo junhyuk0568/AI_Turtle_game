@@ -452,7 +452,7 @@ class GameFlowTests(TestCase):
 
         response = self.client.get(reverse("game:home"))
 
-        self.assertContains(response, "이어하기")
+        self.assertContains(response, "수사 이어가기")
         self.assertContains(response, self.puzzle.title)
 
     def test_score_penalizes_questions_and_hints(self):
@@ -1185,33 +1185,32 @@ class ResultAndHomeTests(TestCase):
 
         response = self.client.get(reverse("game:home"))
 
-        self.assertContains(response, f"클리어 · 최고 {best.score}점")
-        self.assertContains(response, "다시 풀기")
+        self.assertContains(response, f"해결 · 최고 {best.score}점")
+        self.assertContains(response, "다시 수사")
 
     def test_home_ignores_other_visitors_clears(self):
         GameSession.objects.create(puzzle=self.puzzle, session_key="someone-else", status=GameSession.STATUS_CLEARED)
 
         response = self.client.get(reverse("game:home"))
 
-        self.assertNotContains(response, "클리어 ·")
-        self.assertContains(response, "시작하기")
+        self.assertNotContains(response, "해결 ·")
+        self.assertContains(response, "수사 시작")
 
     def test_pages_link_the_site_icon(self):
         response = self.client.get(reverse("game:home"))
 
         self.assertContains(response, "game/img/favicon.svg")
 
-    def test_pages_use_small_webp_images(self):
+    def test_play_page_uses_text_wordmark_and_stamps_without_mascot_images(self):
         game_session = _owned_game(self.client, puzzle=self.puzzle)
         QuestionLog.objects.create(game_session=game_session, question_text="q", answer_label=LABEL_YES)
 
         response = self.client.get(reverse("game:play", args=[game_session.id]))
 
-        self.assertContains(response, "admin-avatar.webp")
-        self.assertContains(response, "user-avatar.webp")
-        self.assertContains(response, "game-logo.webp")
-        for large_png in ("admin-image.png", "user-image.png", "game-logo-transparent.png"):
-            self.assertNotContains(response, large_png)
+        self.assertContains(response, 'class="brand-name"')
+        self.assertContains(response, 'class="message-bubble host judgement yes"')
+        for image in ("avatar", "game-logo", ".png"):
+            self.assertNotContains(response, image)
 
 
 class PuzzleTransferCommandTests(TestCase):
@@ -1430,7 +1429,7 @@ class AccountTests(TestCase):
 
         response = self.client.get(reverse("account_logout"))
 
-        self.assertContains(response, "game-logo.webp")
+        self.assertContains(response, 'class="brand-name"')
         self.assertContains(response, "개인정보 처리방침")
         self.assertNotContains(response, "Menu:")
 

@@ -1,103 +1,87 @@
 {% extends "game/base.html" %}
 
-{% block title %}문제 목록 | AI 바다거북스프{% endblock %}
+{% block title %}사건 목록 | 바다거북스프 사건 기록부{% endblock %}
 
 {% block extra_style %}
 <style>
     .hero {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        grid-template-areas:
-            "eyebrow eyebrow"
-            "title panel"
-            "lead lead";
-        gap: 20px 28px;
-        align-items: center;
-        margin-bottom: 28px;
+        margin-bottom: 30px;
     }
 
-    .hero .eyebrow {
-        grid-area: eyebrow;
-        margin-bottom: 0;
+    .hero h1 {
+        max-width: 760px;
     }
 
-    .hero-title {
-        grid-area: title;
-        margin-bottom: 0;
-        white-space: nowrap;
-        font-size: clamp(18px, 3.75vw, 56px);
-        line-height: 1.12;
+    .hero h1 em {
+        color: var(--stamp-bright);
+        font-style: normal;
     }
 
-    .hero .lead {
-        grid-area: lead;
-    }
-
-    .hero-panel {
-        grid-area: panel;
-        width: 190px;
-        padding: 18px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.76);
-        box-shadow: var(--shadow);
-    }
-
-    .stat-row {
-        display: grid;
-        grid-template-columns: 1fr;
-    }
-
-    .stat {
-        padding: 14px;
-        border-radius: 8px;
-        background: var(--surface-soft);
-    }
-
-    .stat strong {
-        display: block;
-        margin-bottom: 4px;
-        font-size: 28px;
+    .section-label {
+        margin: 0 0 12px;
+        color: var(--chalk-dim);
+        font-size: 13px;
+        letter-spacing: 3px;
     }
 
     .puzzle-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 16px;
+        gap: 22px;
     }
 
     .puzzle-card {
         display: flex;
-        min-height: 260px;
+        min-height: 250px;
         flex-direction: column;
         justify-content: space-between;
-        gap: 20px;
-        padding: 22px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--surface);
-        box-shadow: 0 12px 32px rgba(21, 35, 31, 0.08);
+        gap: 18px;
+        padding: 20px 20px 16px;
     }
 
-    .card-actions {
-        display: inline-flex;
-        flex-shrink: 0;
-        gap: 8px;
-        align-items: center;
-        white-space: nowrap;
+    /* Each file sits a little crooked on the desk. */
+    .puzzle-card:nth-child(3n+1) { transform: rotate(-0.6deg); }
+    .puzzle-card:nth-child(3n+2) { transform: rotate(0.4deg); background-color: var(--paper-deep); }
+    .puzzle-card:nth-child(3n) { transform: rotate(-0.2deg); }
+
+    .puzzle-card::before {
+        content: "";
+        position: absolute;
+        top: -9px;
+        left: 22px;
+        width: 54px;
+        height: 16px;
+        background: rgba(200, 185, 150, 0.55);
+        transform: rotate(-3deg);
+    }
+
+    .case-number {
+        margin: 0 0 6px;
+        color: var(--ink-soft);
+        font-size: 12px;
+        letter-spacing: 2px;
     }
 
     .puzzle-card h2 {
         margin-bottom: 10px;
+        font-size: 21px;
     }
 
     .scenario-preview {
         display: -webkit-box;
         overflow: hidden;
-        color: var(--muted);
-        line-height: 1.65;
+        margin-bottom: 0;
+        color: var(--ink);
+        line-height: 1.75;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 4;
+    }
+
+    .solved-stamp {
+        position: absolute;
+        top: 16px;
+        right: 14px;
+        font-size: 13px;
     }
 
     .card-footer {
@@ -105,50 +89,43 @@
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-        padding-top: 16px;
-        border-top: 1px solid var(--line);
+        padding-top: 12px;
+        border-top: 1px dashed var(--paper-edge);
     }
 
-    .cleared-badge {
-        display: inline-block;
-        margin-left: 8px;
-        padding: 2px 9px;
-        border-radius: 999px;
-        background: var(--primary);
-        color: #ffffff;
-        font-size: 12px;
-        font-weight: 800;
+    .card-actions {
+        display: inline-flex;
+        flex-shrink: 0;
+        gap: 6px;
+        align-items: center;
+        white-space: nowrap;
     }
 
-    @media (max-width: 820px) {
-        .hero {
-            grid-template-columns: 1fr;
-            grid-template-areas:
-                "eyebrow"
-                "title"
-                "panel"
-                "lead"
-        }
+    .card-actions .nav-link {
+        color: var(--ink-soft);
+    }
 
-        .hero-panel {
-            width: 100%;
-        }
+    .card-actions .nav-link:hover {
+        border-color: var(--paper-edge);
+        color: var(--ink);
+    }
+
+    .active-games {
+        margin-bottom: 34px;
     }
 
     @media (max-width: 520px) {
-        .hero-title {
-            font-size: clamp(14px, 4.65vw, 20px);
+        .puzzle-card:nth-child(n) {
+            transform: none;
         }
 
-        .card-footer,
-        .stat-row {
-            grid-template-columns: 1fr;
+        .card-footer {
             flex-direction: column;
             align-items: stretch;
         }
 
-        .button {
-            width: 100%;
+        .card-actions {
+            justify-content: space-between;
         }
     }
 </style>
@@ -156,35 +133,28 @@
 
 {% block content %}
 <header class="page-header hero">
-    <p class="eyebrow">질문으로 진실을 찾아가는 추리 게임</p>
-    <h1 class="hero-title">짧은 이야기 속 숨은 이유를 찾아보세요.</h1>
+    <p class="eyebrow">미결 사건 기록부</p>
+    <h1>{% if puzzles %}사건 <em>{{ puzzles|length }}건</em>이 아직 닫히지 않았다.{% else %}아직 접수된 사건이 없다.{% endif %}</h1>
     <p class="lead">
-        상황을 읽고 예/아니오로 답할 수 있는 질문을 던지면 AI가 단서를 판정합니다.
-        막히면 힌트를 조금씩 열어가며 사건의 진실에 가까워질 수 있습니다.
+        진술은 짧고, 진실은 질문 아래 가라앉아 있다. 예, 아니오로만 물어 그날의 이유를 밝혀내라.
+        막히면 단서를 하나씩 꺼낼 수 있지만, 그만큼 기록은 흐려진다.
     </p>
-    <aside class="hero-panel" aria-label="게임 현황">
-        <div class="stat-row">
-            <div class="stat">
-                <strong>{{ puzzles|length }}</strong>
-                <span class="meta">플레이 가능 문제</span>
-            </div>
-        </div>
-    </aside>
 </header>
 
 {% if active_games %}
-    <section aria-label="진행 중인 게임" style="margin-bottom: 24px;">
-        <p class="eyebrow">진행 중인 게임</p>
+    <section class="active-games" aria-label="수사 중인 사건">
+        <p class="section-label">수사 중</p>
         <div class="puzzle-grid">
             {% for game in active_games %}
-                <article class="puzzle-card">
+                <article class="puzzle-card paper">
                     <div>
+                        <p class="case-number">수사 중인 기록</p>
                         <h2>{{ game.puzzle.title }}</h2>
                         <p class="scenario-preview">{{ game.puzzle.scenario }}</p>
                     </div>
                     <div class="card-footer">
-                        <span class="meta">질문 {{ game.question_count_value }}개 · 힌트 {{ game.hint_used_count }}개</span>
-                        <a class="button" href="{% url 'game:play' game.id %}">이어하기</a>
+                        <span class="meta">질문 {{ game.question_count_value }}개 · 단서 {{ game.hint_used_count }}개</span>
+                        <a class="button" href="{% url 'game:play' game.id %}">수사 이어가기</a>
                     </div>
                 </article>
             {% endfor %}
@@ -193,22 +163,21 @@
 {% endif %}
 
 {% if puzzles %}
-    <section class="puzzle-grid" aria-label="문제 목록">
+    <p class="section-label">사건 목록</p>
+    <section class="puzzle-grid" aria-label="사건 목록">
         {% for puzzle in puzzles %}
-            <article class="puzzle-card">
+            <article class="puzzle-card paper">
+                {% if puzzle.best_score is not None %}<span class="stamp solved-stamp">해결 · 최고 {{ puzzle.best_score }}점</span>{% endif %}
                 <div>
-                    <p class="eyebrow">
-                        Puzzle {{ forloop.counter }}
-                        {% if puzzle.best_score is not None %}<span class="cleared-badge">클리어 · 최고 {{ puzzle.best_score }}점</span>{% endif %}
-                    </p>
+                    <p class="case-number">사건 번호 {{ forloop.counter|stringformat:"03d" }}</p>
                     <h2>{{ puzzle.title }}</h2>
                     <p class="scenario-preview">{{ puzzle.scenario }}</p>
                 </div>
                 <div class="card-footer">
-                    <span class="meta">등록일 {{ puzzle.created_at|date:"Y.m.d" }}</span>
+                    <span class="meta">접수 {{ puzzle.created_at|date:"Y.m.d" }}</span>
                     <span class="card-actions">
                         <a class="nav-link" href="{% url 'game:puzzle_ranking' puzzle.id %}">순위</a>
-                        <a class="button" href="{% url 'game:start_game' puzzle.id %}">{% if puzzle.best_score is not None %}다시 풀기{% else %}시작하기{% endif %}</a>
+                        <a class="button" href="{% url 'game:start_game' puzzle.id %}">{% if puzzle.best_score is not None %}다시 수사{% else %}수사 시작{% endif %}</a>
                     </span>
                 </div>
             </article>
@@ -216,7 +185,7 @@
     </section>
 {% else %}
     <div class="empty-state">
-        아직 공개된 문제가 없습니다. 관리자 화면에서 활성화된 퍼즐을 추가하면 이곳에 표시됩니다.
+        관리자 화면에서 사건(문제)을 활성화하면 이곳에 표시됩니다.
     </div>
 {% endif %}
 {% endblock %}

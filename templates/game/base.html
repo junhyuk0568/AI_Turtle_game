@@ -4,25 +4,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}AI 바다거북스프{% endblock %}</title>
+    <title>{% block title %}바다거북스프 사건 기록부{% endblock %}</title>
     <link rel="icon" href="{% static 'game/img/favicon.svg' %}" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Nanum+Myeongjo:wght@400;700;800&display=swap" rel="stylesheet">
     <style>
+        /* Case-file theme: a dim desk, aged paper, red ink stamps. */
         :root {
-            --bg: #eef4f2;
-            --surface: #ffffff;
-            --surface-soft: #f7faf9;
-            --ink: #17201d;
-            --muted: #65736e;
-            --line: #dce6e2;
-            --primary: #0f766e;
-            --primary-dark: #115e59;
-            --accent: #e76f51;
-            --accent-soft: #fff0ea;
-            --yes: #0f766e;
-            --no: #b42318;
-            --maybe: #7c3aed;
-            --irrelevant: #536471;
-            --shadow: 0 18px 50px rgba(21, 35, 31, 0.11);
+            --desk: #251e17;
+            --desk-raised: #2f271e;
+            --desk-line: #54473a;
+            --chalk: #ece2c9;
+            --chalk-dim: #cbbb9c;
+            --paper: #ece1c6;
+            --paper-deep: #e1d3b1;
+            --paper-edge: #b3a07a;
+            --ink: #2a2218;
+            --ink-soft: #5f5039;
+            --stamp: #9b2c22;
+            --stamp-bright: #c9483a;
+            --yes: #2f5a39;
+            --no: #9b2c22;
+            --maybe: #85621a;
+            --irrelevant: #5b574e;
+            --serif-title: "Nanum Myeongjo", "Batang", serif;
+            --serif-body: "Gowun Batang", "Batang", serif;
+            --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            --paper-shadow: 0 1px 0 rgba(0, 0, 0, 0.5), 0 14px 30px rgba(0, 0, 0, 0.45);
         }
 
         * {
@@ -32,19 +42,76 @@
         body {
             margin: 0;
             min-height: 100vh;
-            background:
-                radial-gradient(circle at top left, rgba(231, 111, 81, 0.16), transparent 30rem),
-                linear-gradient(135deg, #eef4f2 0%, #f7fbfa 48%, #eef3f8 100%);
-            color: var(--ink);
-            font-family: Arial, "Noto Sans KR", sans-serif;
+            background-color: var(--desk);
+            background-image:
+                radial-gradient(ellipse at 50% 0%, rgba(150, 115, 65, 0.2), transparent 60%),
+                var(--grain);
+            color: var(--chalk);
+            font-family: var(--serif-body);
             letter-spacing: 0;
+            /* Korean text wraps between words; long unbroken strings still wrap. */
+            word-break: keep-all;
+            overflow-wrap: break-word;
+        }
+
+        /* Lamp vignette over the desk; it flickers now and then. */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background: radial-gradient(ellipse at 50% 30%, transparent 50%, rgba(0, 0, 0, 0.42) 100%);
+            animation: lamp-flicker 9s infinite steps(1);
+        }
+
+        @keyframes lamp-flicker {
+            0%, 100% { opacity: 1; }
+            71% { opacity: 1; }
+            72% { opacity: 0.82; }
+            73% { opacity: 1; }
+            74% { opacity: 0.88; }
+            75% { opacity: 1; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            body::before {
+                animation: none;
+            }
         }
 
         a {
             color: inherit;
         }
 
+        .lead,
+        .meta,
+        .nav-link,
+        .brand-sub,
+        .site-footer,
+        .empty-state,
+        .section-label,
+        .ranking-tab,
+        .ranking-note,
+        .rank-status {
+            font-weight: 700;
+        }
+
+        .paper .lead,
+        .paper .meta,
+        .paper .empty-state,
+        .form-panel .meta {
+            font-weight: 400;
+        }
+
+        ::selection {
+            background: var(--stamp);
+            color: var(--paper);
+        }
+
         .app-shell {
+            position: relative;
+            z-index: 1;
             width: min(1120px, calc(100% - 32px));
             margin: 0 auto;
             padding: 18px 0 28px;
@@ -55,7 +122,9 @@
             align-items: center;
             justify-content: space-between;
             gap: 16px;
-            margin-bottom: 18px;
+            margin-bottom: 26px;
+            padding-bottom: 14px;
+            border-bottom: 1px dashed var(--desk-line);
         }
 
         .topbar-actions {
@@ -63,7 +132,7 @@
             flex-wrap: wrap;
             align-items: center;
             justify-content: flex-end;
-            gap: 8px;
+            gap: 6px;
         }
 
         .inline-form {
@@ -76,198 +145,301 @@
             cursor: pointer;
         }
 
-        .site-footer {
-            display: flex;
-            gap: 16px;
-            margin-top: 32px;
-            padding-top: 16px;
-            border-top: 1px solid var(--line);
-            color: var(--muted);
-            font-size: 13px;
-        }
-
-        .site-footer a {
-            color: var(--muted);
-        }
-
-        .form-panel {
-            max-width: 560px;
-            padding: 24px;
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.9);
-            box-shadow: var(--shadow);
-        }
-
-        .form-panel input[type="text"] {
-            width: 100%;
-            min-height: 44px;
-            margin: 8px 0;
-            padding: 0 12px;
-            border: 1px solid #c9d6d1;
-            border-radius: 8px;
-            font: inherit;
-        }
-
-        .form-error {
-            color: var(--no);
-            font-weight: 700;
-        }
-
         .brand {
             display: inline-flex;
+            flex-shrink: 0;
             align-items: center;
+            gap: 10px;
+            white-space: nowrap;
+            color: var(--chalk);
             text-decoration: none;
-            font-weight: 800;
         }
 
-        .brand-logo {
-            display: block;
-            width: min(230px, 48vw);
-            height: 44px;
-            object-fit: contain;
-            object-position: left center;
+        .brand-seal {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3px 5px;
+            border: 2px solid var(--stamp-bright);
+            color: var(--stamp-bright);
+            font-family: var(--serif-title);
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1.1;
+            transform: rotate(-6deg);
+        }
+
+        .brand-name {
+            font-family: var(--serif-title);
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+
+        .brand-sub {
+            color: var(--chalk-dim);
+            font-size: 13px;
         }
 
         .nav-link {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-height: 40px;
-            padding: 0 14px;
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.7);
-            color: var(--muted);
+            min-height: 36px;
+            padding: 0 12px;
+            border: 1px solid transparent;
+            background: none;
+            color: var(--chalk-dim);
+            font-size: 15px;
             text-decoration: none;
+        }
+
+        .nav-link:hover {
+            border-color: var(--desk-line);
+            color: var(--chalk);
+        }
+
+        .site-footer {
+            display: flex;
+            gap: 16px;
+            margin-top: 40px;
+            padding-top: 16px;
+            border-top: 1px dashed var(--desk-line);
+            color: var(--chalk-dim);
+            font-size: 13px;
+        }
+
+        .site-footer a {
+            color: var(--chalk-dim);
+        }
+
+        /* Aged paper: cards, panels and dialogs. */
+        .paper {
+            position: relative;
+            border: 1px solid var(--paper-edge);
+            border-radius: 2px;
+            background-color: var(--paper);
+            background-image: var(--paper-grain);
+            background-blend-mode: multiply;
+            box-shadow: var(--paper-shadow);
+            color: var(--ink);
+        }
+
+        .paper .meta,
+        .paper .lead {
+            color: var(--ink-soft);
+        }
+
+        .form-panel {
+            max-width: 560px;
+            padding: 26px;
+            border: 1px solid var(--paper-edge);
+            border-radius: 2px;
+            background-color: var(--paper);
+            background-image: var(--paper-grain);
+            background-blend-mode: multiply;
+            box-shadow: var(--paper-shadow);
+            color: var(--ink);
+            line-height: 1.7;
+        }
+
+        .form-panel .meta {
+            color: var(--ink-soft);
+        }
+
+        .form-panel input[type="text"] {
+            width: 100%;
+            min-height: 44px;
+            margin: 8px 0;
+            padding: 0 4px;
+            border: 0;
+            border-bottom: 1px solid var(--ink);
+            background: transparent;
+            color: var(--ink);
+            font: inherit;
+            font-size: 18px;
+        }
+
+        .form-panel input[type="text"]:focus {
+            outline: none;
+            border-bottom: 2px solid var(--stamp);
+        }
+
+        .form-error {
+            color: var(--stamp);
             font-weight: 700;
         }
 
         .page-header {
-            margin-bottom: 16px;
+            margin-bottom: 18px;
         }
 
         .eyebrow {
             margin: 0 0 10px;
-            color: var(--primary-dark);
-            font-size: 14px;
-            font-weight: 800;
+            color: var(--stamp-bright);
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 3px;
+        }
+
+        .paper .eyebrow,
+        .form-panel .eyebrow {
+            color: var(--stamp);
         }
 
         h1, h2, h3, p {
             margin-top: 0;
         }
 
+        h1, h2, h3 {
+            font-family: var(--serif-title);
+            font-weight: 800;
+            /* Korean headings wrap between words, not inside them. */
+            word-break: keep-all;
+        }
+
         h1 {
             margin-bottom: 12px;
-            font-size: clamp(32px, 4vw, 52px);
-            line-height: 1.08;
+            color: #efe4c8;
+            font-size: clamp(30px, 4vw, 48px);
+            line-height: 1.2;
         }
 
         h2 {
             font-size: 20px;
-            line-height: 1.3;
+            line-height: 1.35;
         }
 
         .lead {
             max-width: 720px;
             margin-bottom: 0;
-            color: var(--muted);
-            font-size: 17px;
-            line-height: 1.7;
+            color: var(--chalk-dim);
+            font-size: 16px;
+            line-height: 1.8;
         }
 
         .button {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-height: 44px;
+            min-height: 42px;
             padding: 0 18px;
-            border: 0;
-            border-radius: 8px;
-            background: var(--primary);
-            color: #ffffff;
+            border: 1px solid #6e1f17;
+            border-radius: 2px;
+            background: var(--stamp);
+            color: #f3e9d2;
             font: inherit;
-            font-weight: 800;
+            font-weight: 700;
+            letter-spacing: 1px;
             text-decoration: none;
             cursor: pointer;
             white-space: nowrap;
         }
 
         .button:hover {
-            background: var(--primary-dark);
+            background: #7f2219;
         }
 
         .button.secondary {
-            border: 1px solid var(--line);
-            background: #ffffff;
-            color: var(--ink);
+            border-color: currentColor;
+            background: transparent;
+            color: inherit;
+        }
+
+        .button.secondary:hover {
+            background: rgba(0, 0, 0, 0.08);
         }
 
         .button.warning {
-            background: var(--accent);
+            border-color: var(--ink);
+            background: var(--ink);
+            color: var(--paper);
         }
 
         .button:disabled {
-            background: #aab7b2;
+            border-color: var(--paper-edge);
+            background: var(--paper-deep);
+            color: var(--ink-soft);
             cursor: not-allowed;
         }
 
+        .stamp {
+            display: inline-block;
+            padding: 2px 8px;
+            border: 2px solid currentColor;
+            color: var(--stamp);
+            font-family: var(--serif-title);
+            font-weight: 800;
+            letter-spacing: 1px;
+            transform: rotate(-4deg);
+            mix-blend-mode: multiply;
+        }
+
         .empty-state {
-            padding: 24px;
-            border: 1px dashed #b8c8c3;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.75);
-            color: var(--muted);
-            line-height: 1.6;
+            padding: 22px;
+            border: 1px dashed var(--desk-line);
+            color: var(--chalk-dim);
+            line-height: 1.7;
+        }
+
+        .paper .empty-state {
+            border-color: var(--paper-edge);
+            color: var(--ink-soft);
         }
 
         .meta {
-            color: var(--muted);
+            color: var(--chalk-dim);
             font-size: 14px;
-            line-height: 1.5;
+            line-height: 1.6;
         }
 
         .messages {
             display: grid;
             gap: 8px;
-            margin: 0 0 16px;
+            margin: 0 0 18px;
             padding: 0;
             list-style: none;
         }
 
         .message {
             padding: 12px 14px;
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            background: #ffffff;
-            line-height: 1.5;
+            border: 1px solid var(--paper-edge);
+            border-left: 4px solid var(--ink-soft);
+            background: var(--paper);
+            color: var(--ink);
+            line-height: 1.6;
         }
 
-        .message.error {
-            border-color: #fecaca;
-            background: #fef2f2;
-            color: #991b1b;
-        }
-
+        .message.error,
         .message.warning {
-            border-color: #fed7aa;
-            background: #fff7ed;
-            color: #9a3412;
+            border-left-color: var(--stamp);
         }
 
         @media (max-width: 760px) {
             .app-shell {
                 width: min(100% - 24px, 1120px);
-                padding-top: 18px;
             }
 
             .topbar {
-                align-items: flex-start;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .topbar-actions {
+                justify-content: flex-start;
+                margin-left: -12px;
+            }
+
+            .brand-name {
+                font-size: 20px;
+            }
+
+            .brand-sub {
+                display: none;
             }
 
             h1 {
-                font-size: 34px;
+                font-size: 28px;
             }
         }
     </style>
@@ -276,8 +448,10 @@
 <body>
     <main class="app-shell">
         <nav class="topbar" aria-label="상단 메뉴">
-            <a class="brand" href="{% url 'game:home' %}">
-                <img class="brand-logo" src="{% static 'game/img/game-logo.webp' %}" alt="AI 바다거북스프">
+            <a class="brand" href="{% url 'game:home' %}" aria-label="바다거북스프 사건 기록부 처음으로">
+                <span class="brand-seal" aria-hidden="true">미결</span>
+                <span class="brand-name">바다거북스프</span>
+                <span class="brand-sub">사건 기록부</span>
             </a>
             <div class="topbar-actions">
                 {% block topbar_action %}{% endblock %}

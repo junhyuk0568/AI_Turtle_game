@@ -1,6 +1,6 @@
 {% extends "game/base.html" %}
 
-{% block title %}계정 삭제 | AI 바다거북스프{% endblock %}
+{% block title %}계정 삭제 | 바다거북스프 사건 기록부{% endblock %}
 
 {% block content %}
 <header class="page-header">
@@ -14,7 +14,7 @@
         {% csrf_token %}
         <label for="id_confirm">계속하려면 <strong>{{ confirm_text }}</strong>를 입력하세요.</label>
         <input type="text" name="confirm" id="id_confirm" autocomplete="off" required>
-        <button class="button warning" type="submit">계정 삭제</button>
+        <button class="button" type="submit">계정 삭제</button>
         <a class="button secondary" href="{% url 'game:home' %}">취소</a>
     </form>
 </section>

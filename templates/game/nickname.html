@@ -1,11 +1,11 @@
 {% extends "game/base.html" %}
 
-{% block title %}닉네임 | AI 바다거북스프{% endblock %}
+{% block title %}닉네임 | 바다거북스프 사건 기록부{% endblock %}
 
 {% block content %}
 <header class="page-header">
-    <p class="eyebrow">{% if is_new %}처음 오셨네요{% else %}내 정보{% endif %}</p>
-    <h1>{% if is_new %}닉네임을 정해 주세요{% else %}닉네임 바꾸기{% endif %}</h1>
+    <p class="eyebrow">{% if is_new %}신규 수사관 등록{% else %}내 정보{% endif %}</p>
+    <h1>{% if is_new %}수사관 이름을 정해 주세요{% else %}닉네임 바꾸기{% endif %}</h1>
     <p class="lead">순위표에는 이 닉네임만 보여요. 구글 이름이나 이메일은 다른 사람에게 보이지 않아요.</p>
 </header>
 

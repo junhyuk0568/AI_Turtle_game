@@ -96,3 +96,20 @@ throwaway login: overall and puzzle boards, "(나)" highlight, result "3위" and
 home ranking links, mobile layout (date column hidden); no server errors.
 Gap: boards are computed in Python per request (fine at current scale; paginate or cache if
 players grow into the thousands).
+
+## 2026-11-25 - Case-file visual redesign (user request: less "AI-looking", eerie mood)
+Files: templates/game/{base,home,play,_question_exchange,result,ranking,nickname,account_delete,privacy}.html,
+templates/socialaccount/signup.html, templates/allauth/layouts/base.html (title), static/game/img/favicon.svg,
+game/tests.py, README.
+Purpose: the user picked direction A ("사건 기록부") from three mockups. Dark desk with a lamp vignette,
+aged-paper cards with grain, Nanum Myeongjo / Gowun Batang (Google Fonts), red-ink stamps for solved
+puzzles and host judgements; text wordmark replaces the mascot logo and avatars; copy reworded
+(사건, 단서, 심문 기록, 진상 밝히기). Motion respects prefers-reduced-motion. Privacy page notes
+that Google Fonts receives the visitor IP.
+Verification: offline gate PASS (109 tests); browser on the DB copy at 1280px and 375px: home, play
+with all four judgement stamps, final-answer dialog, result, ranking, nickname; no server errors.
+Follow-up (user feedback): desk background lightened (#251e17), lighter vignette, and text
+directly on the desk set bold with a brighter muted colour; text on paper unchanged.
+Follow-up: "사건철" renamed to "사건 기록부" (wordmark, page titles, home label); Korean text
+wraps between words (word-break: keep-all) so mobile lines no longer split words.
+Gap: the old mascot images in static/game/img are no longer referenced (kept; delete if unwanted).

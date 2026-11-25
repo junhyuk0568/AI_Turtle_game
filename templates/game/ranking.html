@@ -1,10 +1,10 @@
 {% extends "game/base.html" %}
 {% load game_extras %}
 
-{% block title %}{% if current %}{{ current.title }} 순위{% else %}전체 순위{% endif %} | AI 바다거북스프{% endblock %}
+{% block title %}{% if current %}{{ current.title }} 순위{% else %}전체 순위{% endif %} | 바다거북스프 사건 기록부{% endblock %}
 
 {% block topbar_action %}
-<a class="nav-link" href="{% url 'game:home' %}">문제 목록</a>
+<a class="nav-link" href="{% url 'game:home' %}">사건 목록</a>
 {% endblock %}
 
 {% block extra_style %}
@@ -18,52 +18,54 @@
     .ranking-tabs {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 4px 14px;
+        padding-bottom: 6px;
+        border-bottom: 1px dashed var(--desk-line);
     }
 
     .ranking-tab {
-        padding: 7px 12px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        background: #ffffff;
-        color: var(--muted);
-        font-size: 14px;
-        font-weight: 700;
+        padding: 4px 0;
+        border-bottom: 2px solid transparent;
+        color: var(--chalk-dim);
+        font-size: 15px;
         text-decoration: none;
     }
 
+    .ranking-tab:hover {
+        color: var(--chalk);
+    }
+
     .ranking-tab.active {
-        border-color: var(--primary);
-        background: var(--primary);
-        color: #ffffff;
+        border-bottom-color: var(--stamp-bright);
+        color: var(--chalk);
+        font-weight: 700;
     }
 
     .ranking-panel {
-        padding: 8px 0;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.92);
-        box-shadow: var(--shadow);
+        padding: 6px 0;
         overflow-x: auto;
     }
 
     .ranking-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 15px;
+        font-size: 16px;
     }
 
     .ranking-table th,
     .ranking-table td {
-        padding: 11px 16px;
-        border-bottom: 1px solid var(--line);
+        padding: 11px 18px;
+        border-bottom: 1px dashed var(--paper-edge);
         text-align: left;
         white-space: nowrap;
     }
 
     .ranking-table th {
-        color: var(--muted);
+        border-bottom: 2px solid var(--ink);
+        color: var(--ink-soft);
         font-size: 13px;
+        font-weight: 400;
+        letter-spacing: 2px;
     }
 
     .ranking-table tr:last-child td {
@@ -75,18 +77,24 @@
         font-variant-numeric: tabular-nums;
     }
 
-    .ranking-table .rank {
+    .ranking-table td.rank {
         width: 56px;
+        font-family: var(--serif-title);
+        font-size: 18px;
         font-weight: 800;
     }
 
+    .ranking-table tbody tr:first-child td.rank {
+        color: var(--stamp);
+    }
+
     .ranking-table tr.mine td {
-        background: var(--surface-soft);
+        background: rgba(155, 44, 34, 0.1);
         font-weight: 700;
     }
 
     .ranking-gap td {
-        color: var(--muted);
+        color: var(--ink-soft);
         text-align: center;
     }
 
@@ -102,14 +110,14 @@
     }
 
     .ranking-empty {
-        padding: 16px;
+        padding: 16px 18px;
     }
 
     .ranking-note {
         margin: 0;
-        color: var(--muted);
+        color: var(--chalk-dim);
         font-size: 14px;
-        line-height: 1.6;
+        line-height: 1.7;
     }
 </style>
 {% endblock %}
@@ -117,7 +125,7 @@
 {% block content %}
 <section class="ranking-layout">
     <header class="page-header">
-        <p class="eyebrow">랭킹</p>
+        <p class="eyebrow">수사관 명부</p>
         <h1>{% if current %}{{ current.title }}{% else %}전체 순위{% endif %}</h1>
         <p class="lead">
             {% if current %}점수가 높은 순서예요. 점수가 같으면 더 빨리 푼 기록이 앞서요.
@@ -132,7 +140,7 @@
         {% endfor %}
     </nav>
 
-    <div class="ranking-panel">
+    <div class="ranking-panel paper">
         {% if entries %}
             <table class="ranking-table">
                 <thead>
@@ -160,7 +168,7 @@
                 </tbody>
             </table>
         {% else %}
-            <p class="ranking-note ranking-empty">아직 순위에 오른 기록이 없어요. 첫 번째 주인공이 되어 보세요.</p>
+            <p class="ranking-note ranking-empty">아직 이름이 오른 수사관이 없다. 첫 줄은 비어 있다.</p>
         {% endif %}
     </div>
 
