@@ -1,6 +1,6 @@
 # Plan 004 - Rankings with Google login (multiplayer type A)
 
-Status: Phases 1-2 DONE 2026-11-25 (phase 1 committed 067ab12; phase 2 not committed); phases 3-4 not started
+Status: Phases 1-3 DONE 2026-11-25 (067ab12, 4e2e6ab; phase 3 not committed); phase 4 (deploy) not started
 Lane: Contract/data (accounts, personal data, new models, ranking rules)
 
 ## Decisions (user, 2026-11-25)
@@ -39,7 +39,10 @@ Lane: Contract/data (accounts, personal data, new models, ranking rules)
 - GameSession.is_ranked set at clear time when it is the account's first clear
   of that puzzle (guest clears count after they move to the account).
 - Order: score desc, then clear duration (cleared_at - created_at) asc, then
-  cleared_at asc.
+  cleared_at asc. Score and duration are snapshotted at clear time
+  (GameSession.final_score / play_seconds); a partial unique constraint keeps one
+  ranked clear per account and puzzle. Overall = sum of ranked scores, then more
+  clears, then earlier last clear. Only active puzzles and players with a nickname.
 - Pages: overall ranking, per-puzzle ranking; result page says "이번 기록 N위" or
   "연습 기록 (순위 미반영)"; guests see "로그인하면 순위에 오를 수 있어요".
 - Accept: replay never changes rank; guest-then-login first clear counts;

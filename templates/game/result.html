@@ -52,6 +52,28 @@
         font-size: 28px;
     }
 
+    .rank-status {
+        margin: 0;
+        padding: 14px 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+        color: var(--muted);
+        line-height: 1.6;
+    }
+
+    .rank-status.ranked {
+        border-color: var(--primary);
+        background: var(--surface-soft);
+        color: var(--ink);
+    }
+
+    .rank-status a {
+        margin-left: 6px;
+        color: var(--primary-dark);
+        font-weight: 700;
+    }
+
     .replay-list {
         display: grid;
         gap: 10px;
@@ -144,6 +166,18 @@
         </div>
     </section>
 
+    {% if game_session.is_ranked or user.is_authenticated or google_login_enabled %}
+    <p class="rank-status{% if game_session.is_ranked %} ranked{% endif %}">
+        {% if game_session.is_ranked %}
+            {% if rank %}이번 기록은 이 문제 <strong>{{ rank }}위</strong>예요.{% else %}이번 기록이 순위 기록으로 저장됐어요.{% endif %}
+            <a href="{% url 'game:puzzle_ranking' puzzle.id %}">순위 보기</a>
+        {% elif user.is_authenticated %}
+            연습 기록이라 순위에는 반영되지 않아요. 문제마다 처음 푼 기록만 순위에 올라가요.
+        {% elif google_login_enabled %}
+            구글로 로그인하면 이 기록으로 순위에 오를 수 있어요.
+        {% endif %}
+    </p>
+    {% endif %}
     <article class="result-panel">
         <h2>질문 기록</h2>
         {% if question_logs %}

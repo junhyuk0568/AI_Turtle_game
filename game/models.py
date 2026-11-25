@@ -90,18 +90,35 @@ class GameSession(models.Model):
     submitted_answer = models.TextField(blank=True)
     cleared_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Snapshot taken at clear time so rankings never move afterwards.
+    final_score = models.PositiveIntegerField(null=True, blank=True)
+    play_seconds = models.PositiveIntegerField(null=True, blank=True)
+    # The account's first clear of this puzzle; later clears are practice (see game.rankings).
+    is_ranked = models.BooleanField(default=False, db_index=True)
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "puzzle"],
+                condition=models.Q(is_ranked=True),
+                name="one_ranked_clear_per_puzzle",
+            )
+        ]
 
     def __str__(self):
         return f"{self.puzzle.title} - {self.status}"
 
     def mark_cleared(self, submitted_answer):
+        from .rankings import assign_rank
+
         self.status = self.STATUS_CLEARED
         self.submitted_answer = submitted_answer
         self.cleared_at = timezone.now()
-        self.save(update_fields=["status", "submitted_answer", "cleared_at"])
+        self.final_score = self.score
+        self.play_seconds = max(0, int((self.cleared_at - self.created_at).total_seconds()))
+        self.save(update_fields=["status", "submitted_answer", "cleared_at", "final_score", "play_seconds"])
+        assign_rank(self)
 
     def revealed_checkpoint_numbers(self):
         checkpoint_count = len(self.puzzle.get_answer_checkpoints())

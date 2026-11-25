@@ -253,9 +253,9 @@ class PuzzleAdmin(admin.ModelAdmin):
 
 @admin.register(GameSession)
 class GameSessionAdmin(admin.ModelAdmin):
-    list_display = ("id", "puzzle", "user", "question_count", "hint_used_count", "score", "status", "created_at")
+    list_display = ("id", "puzzle", "user", "question_count", "hint_used_count", "score", "status", "is_ranked", "final_score", "play_seconds", "created_at")
     search_fields = ("puzzle__title", "user__username", "session_key")
-    list_filter = ("status", "created_at", "hint_used_count")
+    list_filter = ("status", "is_ranked", "created_at", "hint_used_count")
 
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(question_count_value=Count("question_logs"))

@@ -79,6 +79,14 @@
         box-shadow: 0 12px 32px rgba(21, 35, 31, 0.08);
     }
 
+    .card-actions {
+        display: inline-flex;
+        flex-shrink: 0;
+        gap: 8px;
+        align-items: center;
+        white-space: nowrap;
+    }
+
     .puzzle-card h2 {
         margin-bottom: 10px;
     }
@@ -198,7 +206,10 @@
                 </div>
                 <div class="card-footer">
                     <span class="meta">등록일 {{ puzzle.created_at|date:"Y.m.d" }}</span>
-                    <a class="button" href="{% url 'game:start_game' puzzle.id %}">{% if puzzle.best_score is not None %}다시 풀기{% else %}시작하기{% endif %}</a>
+                    <span class="card-actions">
+                        <a class="nav-link" href="{% url 'game:puzzle_ranking' puzzle.id %}">순위</a>
+                        <a class="button" href="{% url 'game:start_game' puzzle.id %}">{% if puzzle.best_score is not None %}다시 풀기{% else %}시작하기{% endif %}</a>
+                    </span>
                 </div>
             </article>
         {% endfor %}

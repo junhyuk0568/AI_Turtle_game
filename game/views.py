@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from .accounts import remember_guest_key
 from .limits import consume_billed_call
+from .ranking_views import game_rank
 from .models import GameSession, Puzzle, QuestionLog
 from .services import AIServiceError, FINAL_ANSWER_CORRECT, classify_final_answer, classify_question
 
@@ -100,7 +101,8 @@ def home(request):
 
     best_scores = {}
     for game in games.filter(status=GameSession.STATUS_CLEARED):
-        best_scores[game.puzzle_id] = max(best_scores.get(game.puzzle_id, 0), game.score)
+        score = game.final_score if game.final_score is not None else game.score
+        best_scores[game.puzzle_id] = max(best_scores.get(game.puzzle_id, 0), score)
     for puzzle in puzzles:
         puzzle.best_score = best_scores.get(puzzle.id)
 
@@ -318,6 +320,7 @@ def result_view(request, game_id):
             "puzzle": game_session.puzzle,
             "question_count": len(question_logs),
             "question_logs": question_logs,
-            "score": game_session.score,
+            "score": game_session.final_score if game_session.final_score is not None else game_session.score,
+            "rank": game_rank(game_session),
         },
     )

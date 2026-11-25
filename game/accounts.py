@@ -22,7 +22,12 @@ def claim_guest_games(user, guest_session_key):
     """Give the account every game that the guest session owned. Returns the count."""
     if not guest_session_key:
         return 0
-    return GameSession.objects.filter(session_key=guest_session_key, user__isnull=True).update(user=user)
+    from .rankings import rank_claimed_games
+
+    claimed = GameSession.objects.filter(session_key=guest_session_key, user__isnull=True).update(user=user)
+    if claimed:
+        rank_claimed_games(user)
+    return claimed
 
 
 @receiver(user_logged_in)

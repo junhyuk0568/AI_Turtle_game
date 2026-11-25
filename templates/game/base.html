@@ -281,6 +281,7 @@
             </a>
             <div class="topbar-actions">
                 {% block topbar_action %}{% endblock %}
+                <a class="nav-link" href="{% url 'game:ranking' %}">랭킹</a>
                 {% if user.is_authenticated %}
                     <a class="nav-link" href="{% url 'game:nickname' %}" title="닉네임 바꾸기">
                         {% if user.player_profile %}{{ user.player_profile.nickname }}{% else %}닉네임 정하기{% endif %}

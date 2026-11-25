@@ -1,0 +1,13 @@
+{% load game_extras %}<tr{% if entry.mine %} class="mine"{% endif %}>
+    <td class="rank">{{ entry.rank }}</td>
+    {% if current %}
+        <td>{{ entry.row.user.player_profile.nickname }}{% if entry.mine %} (나){% endif %}</td>
+        <td class="num">{{ entry.row.final_score }}점</td>
+        <td class="num">{{ entry.row.play_seconds|play_time }}</td>
+        <td class="num date">{{ entry.row.cleared_at|date:"Y.m.d" }}</td>
+    {% else %}
+        <td>{{ entry.row.nickname }}{% if entry.mine %} (나){% endif %}</td>
+        <td class="num">{{ entry.row.total_score }}점</td>
+        <td class="num">{{ entry.row.cleared_count }}개</td>
+    {% endif %}
+</tr>

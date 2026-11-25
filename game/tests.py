@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from .admin import QuestionLogAdmin
 from .limits import estimated_cost_usd
+from .rankings import overall_ranking, puzzle_ranking
 from .models import AIUsageLog, DailyUsage, GameSession, PlayerProfile, Puzzle, QuestionLog, QuestionTestCase
 from .services import (
     FALLBACK_BETA,
@@ -840,6 +841,171 @@ class DailyLimitTests(TestCase):
         response = self.client.get(reverse("admin:game_aiusagelog_changelist"))
 
         self.assertContains(response, "오늘 예상 사용액: $0.0000 (하루 예산 $0.01")
+
+
+@override_settings(AI_CALLS_PER_MINUTE=0, DAILY_AI_BUDGET_USD=0)
+class RankingTests(TestCase):
+    def setUp(self):
+        self.puzzle = Puzzle.objects.create(title="순위 문제", scenario="s", answer_text="진실")
+        self.other_puzzle = Puzzle.objects.create(title="두 번째 순위 문제", scenario="s", answer_text="진실")
+
+    def _player(self, nickname, email=None):
+        user = get_user_model().objects.create_user(f"user-{nickname}", email=email or f"{nickname}@example.com")
+        PlayerProfile.objects.create(user=user, nickname=nickname)
+        return user
+
+    def _ranked(self, user, puzzle, score, seconds, cleared_minutes_ago=0):
+        cleared_at = timezone.now() - timedelta(minutes=cleared_minutes_ago)
+        return GameSession.objects.create(
+            puzzle=puzzle, user=user, status=GameSession.STATUS_CLEARED, cleared_at=cleared_at,
+            final_score=score, play_seconds=seconds, is_ranked=True,
+        )
+
+    def _solve(self, game_session):
+        judgement = FinalAnswerJudgement(label=FINAL_ANSWER_CORRECT)
+        with patch("game.views.classify_final_answer", return_value=judgement):
+            return self.client.post(
+                reverse("game:submit_final_answer", args=[game_session.id]), {"submitted_answer": "답"}, follow=True
+            )
+
+    def test_first_clear_is_ranked_and_replay_is_practice(self):
+        user = self._player("첫클리어")
+        self.client.force_login(user)
+        first = GameSession.objects.create(puzzle=self.puzzle, user=user)
+        QuestionLog.objects.create(game_session=first, question_text="q", answer_label=LABEL_NO)
+
+        response = self._solve(first)
+        first.refresh_from_db()
+        self.assertTrue(first.is_ranked)
+        self.assertEqual(first.final_score, 980)
+        self.assertContains(response, "이번 기록은 이 문제 <strong>1위</strong>예요.")
+
+        replay = GameSession.objects.create(puzzle=self.puzzle, user=user)
+        response = self._solve(replay)
+        replay.refresh_from_db()
+        self.assertFalse(replay.is_ranked)
+        self.assertEqual(replay.final_score, 1000)
+        self.assertContains(response, "연습 기록이라 순위에는 반영되지 않아요.")
+        self.assertEqual(GameSession.objects.filter(user=user, is_ranked=True).count(), 1)
+
+    def test_one_ranked_clear_per_account_and_puzzle_is_enforced(self):
+        from django.db import IntegrityError, transaction
+
+        user = self._player("중복")
+        self._ranked(user, self.puzzle, 900, 60)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self._ranked(user, self.puzzle, 1000, 30)
+
+    @override_settings(**GOOGLE_TEST_SETTINGS)
+    def test_guest_clear_shows_login_prompt_and_counts_after_login(self):
+        from .accounts import claim_guest_games
+
+        game_session = _owned_game(self.client, puzzle=self.puzzle)
+        response = self._solve(game_session)
+        self.assertContains(response, "구글로 로그인하면 이 기록으로 순위에 오를 수 있어요.")
+        game_session.refresh_from_db()
+        self.assertFalse(game_session.is_ranked)
+
+        user = self._player("게스트출신")
+        claim_guest_games(user, game_session.session_key)
+
+        game_session.refresh_from_db()
+        self.assertTrue(game_session.is_ranked)
+
+    def test_claimed_guest_clear_stays_practice_when_account_already_ranked(self):
+        from .accounts import claim_guest_games
+
+        user = self._player("이미순위")
+        ranked = self._ranked(user, self.puzzle, 700, 300)
+        guest_game = _owned_game(self.client, puzzle=self.puzzle)
+        guest_game.mark_cleared("답")
+
+        claim_guest_games(user, guest_game.session_key)
+
+        guest_game.refresh_from_db()
+        self.assertFalse(guest_game.is_ranked)
+        self.assertEqual(list(GameSession.objects.filter(is_ranked=True)), [ranked])
+
+    def test_puzzle_ranking_orders_by_score_then_time_then_clear_date(self):
+        slow = self._ranked(self._player("느림"), self.puzzle, 900, 600, cleared_minutes_ago=50)
+        fast = self._ranked(self._player("빠름"), self.puzzle, 900, 120, cleared_minutes_ago=10)
+        early = self._ranked(self._player("먼저"), self.puzzle, 900, 120, cleared_minutes_ago=40)
+        best = self._ranked(self._player("최고"), self.puzzle, 980, 900)
+
+        self.assertEqual(puzzle_ranking(self.puzzle), [best, early, fast, slow])
+
+        response = self.client.get(reverse("game:puzzle_ranking", args=[self.puzzle.id]))
+        content = response.content.decode()
+        self.assertLess(content.index("최고"), content.index("먼저"))
+        self.assertContains(response, "2분 0초")
+
+    def test_overall_ranking_sums_first_clears_and_shows_only_nicknames(self):
+        alice = self._player("앨리스", email="alice-secret@example.com")
+        bob = self._player("밥")
+        self._ranked(alice, self.puzzle, 800, 60)
+        self._ranked(alice, self.other_puzzle, 700, 60)
+        self._ranked(bob, self.puzzle, 1000, 60)
+        GameSession.objects.create(puzzle=self.other_puzzle, user=bob, status=GameSession.STATUS_CLEARED,
+                                   cleared_at=timezone.now(), final_score=1000, play_seconds=5)
+        staff = get_user_model().objects.create_user("staff-no-profile", is_staff=True)
+        GameSession.objects.create(puzzle=self.puzzle, user=staff, status=GameSession.STATUS_CLEARED,
+                                   cleared_at=timezone.now(), final_score=1000, play_seconds=5, is_ranked=True)
+
+        rows = overall_ranking()
+        self.assertEqual([(row.nickname, row.total_score, row.cleared_count) for row in rows],
+                         [("앨리스", 1500, 2), ("밥", 1000, 1)])
+
+        response = self.client.get(reverse("game:ranking"))
+        self.assertContains(response, "1500점")
+        self.assertNotContains(response, "alice-secret")
+        self.assertNotContains(response, "staff-no-profile")
+
+    def test_inactive_puzzles_leave_the_boards(self):
+        user = self._player("숨김")
+        self._ranked(user, self.puzzle, 900, 60)
+        self.puzzle.is_active = False
+        self.puzzle.save()
+
+        self.assertEqual(overall_ranking(), [])
+        self.assertEqual(self.client.get(reverse("game:puzzle_ranking", args=[self.puzzle.id])).status_code, 404)
+
+    def test_viewer_below_the_board_still_sees_their_row(self):
+        from . import ranking_views
+
+        players = [self._player(f"p{number}") for number in range(4)]
+        for number, player in enumerate(players):
+            self._ranked(player, self.puzzle, 1000 - number * 10, 60)
+        self.client.force_login(players[-1])
+
+        with patch.object(ranking_views, "RANKING_SIZE", 2):
+            response = self.client.get(reverse("game:puzzle_ranking", args=[self.puzzle.id]))
+
+        self.assertContains(response, "p0")
+        self.assertNotContains(response, ">p2<")
+        self.assertContains(response, "p3 (나)")
+        self.assertEqual([entry["rank"] for entry in response.context["entries"]], [1, 2])
+        self.assertEqual(response.context["mine_below"]["rank"], 4)
+
+    def test_backfill_ranks_each_accounts_first_existing_clear(self):
+        import importlib
+        from django.apps import apps as django_apps
+
+        migration = importlib.import_module("game.migrations.0014_ranked_first_clears")
+        user = self._player("예전기록")
+        older = GameSession.objects.create(puzzle=self.puzzle, user=user, status=GameSession.STATUS_CLEARED,
+                                           cleared_at=timezone.now() - timedelta(days=2), hint_used_count=1)
+        QuestionLog.objects.create(game_session=older, question_text="q", answer_label=LABEL_NO)
+        newer = GameSession.objects.create(puzzle=self.puzzle, user=user, status=GameSession.STATUS_CLEARED,
+                                           cleared_at=timezone.now())
+        guest = GameSession.objects.create(puzzle=self.puzzle, session_key="guest", status=GameSession.STATUS_CLEARED,
+                                           cleared_at=timezone.now())
+
+        migration.backfill_scores_and_ranks(django_apps, None)
+
+        older.refresh_from_db(); newer.refresh_from_db(); guest.refresh_from_db()
+        self.assertEqual((older.is_ranked, older.final_score), (True, 830))
+        self.assertEqual((newer.is_ranked, newer.final_score), (False, 1000))
+        self.assertFalse(guest.is_ranked)
 
 
 class StarterFixtureTests(TestCase):

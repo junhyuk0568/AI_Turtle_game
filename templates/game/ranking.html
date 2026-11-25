@@ -1,0 +1,172 @@
+{% extends "game/base.html" %}
+{% load game_extras %}
+
+{% block title %}{% if current %}{{ current.title }} 순위{% else %}전체 순위{% endif %} | AI 바다거북스프{% endblock %}
+
+{% block topbar_action %}
+<a class="nav-link" href="{% url 'game:home' %}">문제 목록</a>
+{% endblock %}
+
+{% block extra_style %}
+<style>
+    .ranking-layout {
+        display: grid;
+        gap: 18px;
+        max-width: 900px;
+    }
+
+    .ranking-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .ranking-tab {
+        padding: 7px 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #ffffff;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    .ranking-tab.active {
+        border-color: var(--primary);
+        background: var(--primary);
+        color: #ffffff;
+    }
+
+    .ranking-panel {
+        padding: 8px 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: var(--shadow);
+        overflow-x: auto;
+    }
+
+    .ranking-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 15px;
+    }
+
+    .ranking-table th,
+    .ranking-table td {
+        padding: 11px 16px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    .ranking-table th {
+        color: var(--muted);
+        font-size: 13px;
+    }
+
+    .ranking-table tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .ranking-table .num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .ranking-table .rank {
+        width: 56px;
+        font-weight: 800;
+    }
+
+    .ranking-table tr.mine td {
+        background: var(--surface-soft);
+        font-weight: 700;
+    }
+
+    .ranking-gap td {
+        color: var(--muted);
+        text-align: center;
+    }
+
+    @media (max-width: 520px) {
+        .ranking-table th,
+        .ranking-table td {
+            padding: 10px 10px;
+        }
+
+        .ranking-table .date {
+            display: none;
+        }
+    }
+
+    .ranking-empty {
+        padding: 16px;
+    }
+
+    .ranking-note {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="ranking-layout">
+    <header class="page-header">
+        <p class="eyebrow">랭킹</p>
+        <h1>{% if current %}{{ current.title }}{% else %}전체 순위{% endif %}</h1>
+        <p class="lead">
+            {% if current %}점수가 높은 순서예요. 점수가 같으면 더 빨리 푼 기록이 앞서요.
+            {% else %}문제마다 처음 푼 기록의 점수를 더한 순위예요.{% endif %}
+        </p>
+    </header>
+
+    <nav class="ranking-tabs" aria-label="순위 종류">
+        <a class="ranking-tab{% if not current %} active{% endif %}" href="{% url 'game:ranking' %}">전체</a>
+        {% for puzzle in puzzles %}
+            <a class="ranking-tab{% if current and current.id == puzzle.id %} active{% endif %}" href="{% url 'game:puzzle_ranking' puzzle.id %}">{{ puzzle.title }}</a>
+        {% endfor %}
+    </nav>
+
+    <div class="ranking-panel">
+        {% if entries %}
+            <table class="ranking-table">
+                <thead>
+                    <tr>
+                        <th class="rank">순위</th>
+                        <th>닉네임</th>
+                        {% if current %}
+                            <th class="num">점수</th>
+                            <th class="num">걸린 시간</th>
+                            <th class="num date">클리어</th>
+                        {% else %}
+                            <th class="num">총점</th>
+                            <th class="num">푼 문제</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                        {% include "game/_ranking_row.html" %}
+                    {% endfor %}
+                    {% if mine_below %}
+                        <tr class="ranking-gap"><td colspan="{% if current %}5{% else %}4{% endif %}">…</td></tr>
+                        {% with entry=mine_below %}{% include "game/_ranking_row.html" %}{% endwith %}
+                    {% endif %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="ranking-note ranking-empty">아직 순위에 오른 기록이 없어요. 첫 번째 주인공이 되어 보세요.</p>
+        {% endif %}
+    </div>
+
+    <p class="ranking-note">
+        문제마다 계정의 첫 클리어 기록만 순위에 올라가요. 정답을 본 뒤 다시 푼 기록은 연습 기록이에요.
+        {% if not user.is_authenticated and google_login_enabled %}<br>구글로 로그인하면 순위에 오를 수 있어요. 게스트로 푼 기록도 로그인하면 함께 옮겨져요.{% endif %}
+    </p>
+</section>
+{% endblock %}

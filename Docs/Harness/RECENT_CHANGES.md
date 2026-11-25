@@ -81,3 +81,18 @@ Verification: offline gate PASS (100 tests); local DB migrated (backup kept in t
 scratchpad); browser on a DB copy with a simulated $100 day: question refused inline with the
 budget message, typed question kept, no Claude call or usage row.
 Gap: guests can reset their cap by clearing cookies (the budget is the backstop).
+
+## 2026-11-25 - Rankings (plan 004 phase 3)
+Files: game/rankings.py, game/ranking_views.py (new), game/{models,views,urls,accounts,admin,tests}.py,
+game/templatetags/game_extras.py (play_time), migration 0014 (final_score, play_seconds,
+is_ranked + partial unique constraint, backfill), templates/game/{ranking,_ranking_row}.html (new),
+templates/game/{base,home,result}.html, README.
+Purpose: first clear per account and puzzle is ranked (guest clears count after login claim);
+overall and per-puzzle boards with nicknames only; result page shows rank, practice or login prompt;
+home best score uses the stored clear score.
+Verification: offline gate PASS (109 tests); local DB migrated (backfill ranked 1 existing clear;
+backup kept in the session scratchpad); browser on a DB copy with three sample players and a
+throwaway login: overall and puzzle boards, "(나)" highlight, result "3위" and practice note,
+home ranking links, mobile layout (date column hidden); no server errors.
+Gap: boards are computed in Python per request (fine at current scale; paginate or cache if
+players grow into the thousands).
