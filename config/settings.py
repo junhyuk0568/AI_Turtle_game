@@ -96,6 +96,15 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Database cache: rate-limit counters are shared by every worker. The table is
+# created by a game migration (createcachetable), so `migrate` is enough.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "game_cache",
+    }
+}
+
 # Login: Google accounts only (django-allauth). Players need no password here.
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
@@ -130,10 +139,20 @@ CLAUDE_QUESTION_MAX_TOKENS = int(os.getenv("GAME_CLAUDE_QUESTION_MAX_TOKENS", "4
 CLAUDE_FINAL_ANSWER_MAX_TOKENS = int(os.getenv("GAME_CLAUDE_FINAL_ANSWER_MAX_TOKENS", "4000"))
 CLAUDE_CRITERIA_MAX_TOKENS = int(os.getenv("GAME_CLAUDE_CRITERIA_MAX_TOKENS", "16000"))
 QUESTION_HISTORY_LIMIT = int(os.getenv("GAME_QUESTION_HISTORY_LIMIT", "8"))
-# Abuse limits for billed Claude calls. The per-minute window is per client IP and
-# uses the default cache; use a shared cache (e.g. Redis) when running several workers.
+# Abuse and cost limits for billed Claude calls (questions and final answers); 0 disables each.
+# The per-minute window is per client IP and lives in the database cache, so it holds
+# across workers. Daily caps count per account when logged in, else per guest session.
 AI_CALLS_PER_MINUTE = int(os.getenv("GAME_AI_CALLS_PER_MINUTE", "10"))
 MAX_QUESTIONS_PER_GAME = int(os.getenv("GAME_MAX_QUESTIONS_PER_GAME", "100"))
+DAILY_AI_CALLS_PER_ACCOUNT = int(os.getenv("GAME_DAILY_AI_CALLS_PER_ACCOUNT", "300"))
+DAILY_AI_CALLS_PER_GUEST = int(os.getenv("GAME_DAILY_AI_CALLS_PER_GUEST", "50"))
+# Service-wide daily spend stop, estimated from AIUsageLog tokens (local day, TIME_ZONE).
+DAILY_AI_BUDGET_USD = float(os.getenv("GAME_DAILY_AI_BUDGET_USD", "5"))
+# USD per million tokens; defaults are claude-sonnet-5-5 list prices (cache write = 5-minute TTL).
+AI_PRICE_INPUT_PER_MTOK = float(os.getenv("GAME_AI_PRICE_INPUT_PER_MTOK", "2"))
+AI_PRICE_CACHE_WRITE_PER_MTOK = float(os.getenv("GAME_AI_PRICE_CACHE_WRITE_PER_MTOK", "2.5"))
+AI_PRICE_CACHE_READ_PER_MTOK = float(os.getenv("GAME_AI_PRICE_CACHE_READ_PER_MTOK", "0.1"))
+AI_PRICE_OUTPUT_PER_MTOK = float(os.getenv("GAME_AI_PRICE_OUTPUT_PER_MTOK", "10"))
 
 LOGGING = {
     "version": 1,

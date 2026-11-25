@@ -184,13 +184,29 @@ class AIUsageLog(models.Model):
     total_tokens = models.PositiveIntegerField(default=0)
     success = models.BooleanField(default=True)
     error_message = models.CharField(max_length=255, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    # Indexed: the daily budget check sums today's rows on every billed call.
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.operation} - {self.total_tokens} tokens"
+
+
+class DailyUsage(models.Model):
+    """Billed Claude calls per player per day (identity is "user:<id>" or "guest:<session key>")."""
+
+    day = models.DateField()
+    identity = models.CharField(max_length=80)
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-day", "-count"]
+        constraints = [models.UniqueConstraint(fields=["day", "identity"], name="unique_daily_usage")]
+
+    def __str__(self):
+        return f"{self.day} {self.identity}: {self.count}"
 
 
 NICKNAME_PATTERN = r"^[0-9A-Za-z가-힣_]{2,12}$"

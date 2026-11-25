@@ -1,6 +1,5 @@
 from django.conf import settings
 from django.contrib import messages
-from django.core.cache import cache
 from django.db.models import Count
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -9,6 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .accounts import remember_guest_key
+from .limits import consume_billed_call
 from .models import GameSession, Puzzle, QuestionLog
 from .services import AIServiceError, FINAL_ANSWER_CORRECT, classify_final_answer, classify_question
 
@@ -17,7 +17,6 @@ HINT_FIELDS = ("hint1", "hint2", "hint3")
 MAX_HINT_COUNT = len(HINT_FIELDS)
 MAX_QUESTION_LENGTH = 500
 MAX_ANSWER_LENGTH = 2000
-RATE_LIMIT_MESSAGE = "요청이 너무 많아요. 1분 정도 기다렸다가 다시 시도해 주세요."
 
 
 def _client_owns_game(request, game_session):
@@ -33,21 +32,6 @@ def _get_game_session(request, game_id):
     if not _client_owns_game(request, game_session):
         raise Http404("게임을 찾을 수 없습니다.")
     return game_session
-
-
-def _consume_ai_call_quota(request):
-    """Fixed one-minute window per client IP for billed Claude calls."""
-    limit = settings.AI_CALLS_PER_MINUTE
-    if limit <= 0:
-        return True
-    key = f"game:ai-calls:{request.META.get('REMOTE_ADDR', 'unknown')}"
-    if cache.add(key, 1, timeout=60):
-        return True
-    try:
-        return cache.incr(key) <= limit
-    except ValueError:
-        cache.set(key, 1, timeout=60)
-        return True
 
 
 def _redirect_if_cleared(game_session):
@@ -194,8 +178,9 @@ def _judge_and_log_question(request, game_session, question_text):
             f"이 게임에서 할 수 있는 질문 {settings.MAX_QUESTIONS_PER_GAME}개를 모두 사용했어요. 정답을 말해 보세요.",
             messages.ERROR,
         )
-    if not _consume_ai_call_quota(request):
-        return None, RATE_LIMIT_MESSAGE, messages.ERROR
+    limit_message = consume_billed_call(request)
+    if limit_message:
+        return None, limit_message, messages.ERROR
 
     recent_logs = game_session.question_logs.order_by("-created_at")[: settings.QUESTION_HISTORY_LIMIT]
     history = [(log.question_text, log.answer_label) for log in reversed(list(recent_logs))]
@@ -288,8 +273,9 @@ def submit_final_answer(request, game_id):
             messages.error(request, f"정답은 {MAX_ANSWER_LENGTH}자 이하로 입력해주세요.")
             return redirect("game:play", game_id=game_session.id)
 
-        if submitted_answer and not _consume_ai_call_quota(request):
-            messages.error(request, RATE_LIMIT_MESSAGE)
+        limit_message = consume_billed_call(request) if submitted_answer else None
+        if limit_message:
+            messages.error(request, limit_message)
             return redirect("game:play", game_id=game_session.id)
 
         try:

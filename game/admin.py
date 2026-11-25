@@ -1,10 +1,12 @@
+from django.conf import settings
 from django.contrib import admin, messages
 from django.db.models import Count, Q
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 
-from .models import AIUsageLog, GameSession, PlayerProfile, Puzzle, QuestionLog, QuestionTestCase
+from .limits import estimated_cost_usd
+from .models import AIUsageLog, DailyUsage, GameSession, PlayerProfile, Puzzle, QuestionLog, QuestionTestCase
 from .services import AIServiceError, classify_question, generate_puzzle_criteria
 
 
@@ -366,6 +368,12 @@ class AIUsageLogAdmin(admin.ModelAdmin):
     )
     list_filter = ("operation", "model", "success", "created_at")
     search_fields = ("operation", "model", "error_message")
+
+    def changelist_view(self, request, extra_context=None):
+        budget = settings.DAILY_AI_BUDGET_USD
+        budget_text = f"${budget:.2f}" if budget > 0 else "제한 없음"
+        messages.info(request, f"오늘 예상 사용액: ${estimated_cost_usd():.4f} (하루 예산 {budget_text}, 목록 가격 기준 추정치)")
+        return super().changelist_view(request, extra_context)
     readonly_fields = (
         "operation",
         "model",
@@ -388,3 +396,11 @@ class PlayerProfileAdmin(admin.ModelAdmin):
     list_display = ("nickname", "user", "created_at", "updated_at")
     search_fields = ("nickname",)
     readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(DailyUsage)
+class DailyUsageAdmin(admin.ModelAdmin):
+    list_display = ("day", "identity", "count")
+    list_filter = ("day",)
+    search_fields = ("identity",)
+    readonly_fields = ("day", "identity", "count")

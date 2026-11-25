@@ -1,6 +1,6 @@
 # Plan 004 - Rankings with Google login (multiplayer type A)
 
-Status: Phase 1 DONE 2026-11-25 (live Google login verified locally); phases 2-4 not started
+Status: Phases 1-2 DONE 2026-11-25 (phase 1 committed 067ab12; phase 2 not committed); phases 3-4 not started
 Lane: Contract/data (accounts, personal data, new models, ranking rules)
 
 ## Decisions (user, 2026-11-25)
@@ -26,8 +26,9 @@ Lane: Contract/data (accounts, personal data, new models, ranking rules)
   enforced; Google name/email never rendered on public pages.
 
 ### Phase 2 - Cost limits per player
-- Daily question cap per account and per guest session (GAME_DAILY_QUESTIONS_*),
-  in addition to the per-IP minute window; logged-in users limited by account.
+- Daily cap on billed calls (questions + final answers) per account and per guest
+  session (GAME_DAILY_AI_CALLS_PER_ACCOUNT / _PER_GUEST, DailyUsage model), in addition
+  to the per-IP minute window; logged-in users limited by account.
 - Service-wide daily Claude budget from AIUsageLog token costs
   (GAME_DAILY_AI_BUDGET_USD); over budget -> friendly "오늘은 마감" message.
 - Rate-limit cache switched to a shared cache (database cache) so limits hold

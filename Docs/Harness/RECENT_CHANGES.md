@@ -68,3 +68,16 @@ from the player account), all allauth pages now use the site layout
 (templates/allauth/layouts/base.html) and the email-conflict fallback explains instead of
 asking for a username (templates/socialaccount/signup.html). Offline gate PASS (94 tests).
 Google sign-in now shows the app name "AI 바다거북스프" (user renamed it in Branding).
+
+## 2026-11-25 - Per-player daily caps and daily AI budget (plan 004 phase 2)
+Files: game/limits.py (new), game/{models,views,admin,tests}.py, migration 0013
+(DailyUsage, AIUsageLog.created_at index, createcachetable), config/settings.py
+(database cache, GAME_DAILY_AI_CALLS_PER_ACCOUNT/_PER_GUEST, GAME_DAILY_AI_BUDGET_USD,
+GAME_AI_PRICE_*_PER_MTOK), env examples, README, DEPLOYMENT.
+Purpose: cap billed calls per account (300/day) and per guest session (50/day), stop player
+calls when today's estimated spend reaches the budget ($5), and keep the per-minute window
+in a database cache shared by workers. Admin AI usage list shows today's estimate.
+Verification: offline gate PASS (100 tests); local DB migrated (backup kept in the session
+scratchpad); browser on a DB copy with a simulated $100 day: question refused inline with the
+budget message, typed question kept, no Claude call or usage row.
+Gap: guests can reset their cap by clearing cookies (the budget is the backstop).

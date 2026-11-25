@@ -88,6 +88,9 @@ GAME_CLAUDE_EFFORT=low
 - 게임은 만든 사람(같은 브라우저 세션, 또는 로그인한 사용자)만 열 수 있습니다. 다른 사람의 게임 번호로 접근하면 404가 됩니다.
 - 유료 Claude 호출(질문, 정답 제출)은 IP당 1분에 `GAME_AI_CALLS_PER_MINUTE`회(기본 10)로 제한합니다. 0이면 제한하지 않습니다.
 - 게임 하나에서 할 수 있는 질문은 `GAME_MAX_QUESTIONS_PER_GAME`개(기본 100)까지입니다.
+- 하루에 할 수 있는 질문·정답 제출은 로그인 계정당 `GAME_DAILY_AI_CALLS_PER_ACCOUNT`회(기본 300), 게스트 세션당 `GAME_DAILY_AI_CALLS_PER_GUEST`회(기본 50)입니다. 날짜는 한국 시간 기준으로 바뀝니다.
+- 서비스 전체의 오늘 예상 사용액이 `GAME_DAILY_AI_BUDGET_USD`(기본 5달러)에 도달하면 플레이어 호출을 멈추고 "오늘은 마감" 안내를 보여줍니다. 사용액은 `AI usage logs`의 토큰 수에 `GAME_AI_PRICE_*_PER_MTOK`(기본값은 Sonnet 5.5 목록 가격)를 곱한 추정치이며, 관리자 화면 `AI usage logs` 목록 위에 표시됩니다. 실제 청구액은 Claude Console에서 확인하세요.
+- 요청 제한 기록은 데이터베이스(캐시 테이블 `game_cache`, `Daily usages`)에 저장되므로 여러 워커로 실행해도 함께 계산됩니다. 캐시 테이블은 `migrate`가 만듭니다.
 - 같은 질문을 다시 보내면 Claude를 호출하지 않고 횟수도 세지 않습니다.
 
 ## 판정 품질 관리
@@ -129,5 +132,5 @@ python manage.py import_puzzles private/puzzles.json
 - `DJANGO_ALLOWED_HOSTS`에 실제 도메인 등록
 - HTTPS 적용 후 `DJANGO_SECURE_SSL_REDIRECT`, 보안 쿠키, HSTS 설정 활성화
 - 운영 데이터는 Git 밖의 별도 데이터베이스에 둡니다. 기본 문제는 fixture로 불러옵니다.
-- 서버 여러 대 또는 여러 워커로 실행하면 요청 제한이 워커마다 따로 계산됩니다. Redis 같은 공유 캐시를 설정하세요.
+- 모델을 바꾸면 예산 계산용 가격(`GAME_AI_PRICE_*_PER_MTOK`)도 그 모델 가격으로 맞추세요.
 - 리버스 프록시 뒤에서는 `REMOTE_ADDR`가 프록시 주소가 되므로, 실제 클라이언트 IP를 넘겨받도록 설정해야 요청 제한이 사용자별로 동작합니다.

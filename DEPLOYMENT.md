@@ -36,9 +36,13 @@ Other puzzles are exported locally with `export_puzzles private/puzzles.json --e
 copied to the server privately, and loaded with `import_puzzles` (upsert by title).
 For real production use, move to a server-managed database and keep production data outside Git.
 
-Abuse limits (`GAME_AI_CALLS_PER_MINUTE`, `GAME_MAX_QUESTIONS_PER_GAME`) use the Django cache
-and the client IP. Configure a shared cache for multiple workers and forward the real client IP
-when running behind a reverse proxy.
+Abuse and cost limits: `GAME_AI_CALLS_PER_MINUTE` (per client IP, database cache table
+`game_cache`, created by `migrate`), `GAME_MAX_QUESTIONS_PER_GAME`, the daily caps
+`GAME_DAILY_AI_CALLS_PER_ACCOUNT` / `GAME_DAILY_AI_CALLS_PER_GUEST` (DailyUsage rows), and the
+service-wide `GAME_DAILY_AI_BUDGET_USD` (estimated from AIUsageLog tokens with the
+`GAME_AI_PRICE_*_PER_MTOK` list prices; set those if you change the model). All of them live in
+the database, so they hold across workers. Forward the real client IP when running behind a
+reverse proxy, or every visitor shares one per-minute window.
 
 ## 4. Preflight Commands
 

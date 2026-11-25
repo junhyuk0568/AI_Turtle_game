@@ -1,3 +1,4 @@
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import json
@@ -7,9 +8,11 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import RequestFactory, TestCase, override_settings, tag
 from django.urls import reverse
+from django.utils import timezone
 
 from .admin import QuestionLogAdmin
-from .models import AIUsageLog, GameSession, PlayerProfile, Puzzle, QuestionLog, QuestionTestCase
+from .limits import estimated_cost_usd
+from .models import AIUsageLog, DailyUsage, GameSession, PlayerProfile, Puzzle, QuestionLog, QuestionTestCase
 from .services import (
     FALLBACK_BETA,
     FINAL_ANSWER_CORRECT,
@@ -57,6 +60,17 @@ def _fake_client(response):
     client = MagicMock()
     client.beta.messages.create.return_value = response
     return client
+
+
+GOOGLE_TEST_SETTINGS = {
+    "GOOGLE_LOGIN_ENABLED": True,
+    "SOCIALACCOUNT_PROVIDERS": {
+        "google": {
+            "APPS": [{"client_id": "test-client", "secret": "test-secret", "key": ""}],
+            "SCOPE": ["profile", "email"],
+        }
+    },
+}
 
 
 def _owned_game(client, **fields):
@@ -733,6 +747,101 @@ class AbuseLimitTests(TestCase):
         self.assertContains(response, "이미 같은 질문을 했습니다.")
 
 
+@override_settings(AI_CALLS_PER_MINUTE=0, DAILY_AI_BUDGET_USD=0)
+class DailyLimitTests(TestCase):
+    def setUp(self):
+        self.puzzle = Puzzle.objects.create(title="일일 제한 문제", scenario="s", answer_text="a")
+
+    def _ask(self, game_session, question):
+        return self.client.post(
+            reverse("game:ask_question", args=[game_session.id]), {"question_text": question}, follow=True
+        )
+
+    def _login(self, username="daily-player"):
+        user = get_user_model().objects.create_user(username)
+        PlayerProfile.objects.create(user=user, nickname=username.replace("-", "_")[:12])
+        self.client.force_login(user)
+        return user
+
+    @override_settings(DAILY_AI_CALLS_PER_GUEST=2)
+    def test_guest_daily_cap_spans_games_and_final_answers(self):
+        first = _owned_game(self.client, puzzle=self.puzzle)
+        with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)):
+            self._ask(first, "질문 1")
+        second_puzzle = Puzzle.objects.create(title="두 번째", scenario="s", answer_text="a")
+        second = _owned_game(self.client, puzzle=second_puzzle)
+        judgement = FinalAnswerJudgement(label=FINAL_ANSWER_INSUFFICIENT)
+        with patch("game.views.classify_final_answer", return_value=judgement) as grader:
+            self.client.post(reverse("game:submit_final_answer", args=[second.id]), {"submitted_answer": "답"})
+            response = self.client.post(
+                reverse("game:submit_final_answer", args=[second.id]), {"submitted_answer": "다른 답"}, follow=True
+            )
+
+        self.assertEqual(grader.call_count, 1)
+        self.assertContains(response, "오늘 쓸 수 있는 질문·정답 제출 2회를 모두 썼어요.")
+        self.assertEqual(DailyUsage.objects.get().count, 2)
+
+    @override_settings(DAILY_AI_CALLS_PER_GUEST=1, DAILY_AI_CALLS_PER_ACCOUNT=3, **GOOGLE_TEST_SETTINGS)
+    def test_logged_in_players_are_counted_by_account_with_their_own_cap(self):
+        user = self._login()
+        game_session = GameSession.objects.create(puzzle=self.puzzle, user=user)
+        with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)) as classifier:
+            for number in range(4):
+                response = self._ask(game_session, f"질문 {number}")
+
+        self.assertEqual(classifier.call_count, 3)
+        self.assertContains(response, "3회를 모두 썼어요.")
+        self.assertNotContains(response, "로그인하면")
+        self.assertEqual(DailyUsage.objects.get().identity, f"user:{user.pk}")
+
+    @override_settings(DAILY_AI_CALLS_PER_GUEST=1, DAILY_AI_CALLS_PER_ACCOUNT=300, **GOOGLE_TEST_SETTINGS)
+    def test_guest_limit_message_suggests_login_when_available(self):
+        game_session = _owned_game(self.client, puzzle=self.puzzle)
+        with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)):
+            self._ask(game_session, "질문 1")
+            response = self._ask(game_session, "질문 2")
+
+        self.assertContains(response, "로그인하면 하루 300회까지 쓸 수 있어요.")
+
+    @override_settings(DAILY_AI_CALLS_PER_GUEST=1)
+    def test_daily_cap_resets_the_next_day(self):
+        game_session = _owned_game(self.client, puzzle=self.puzzle)
+        with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)) as classifier:
+            self._ask(game_session, "질문 1")
+            DailyUsage.objects.update(day=timezone.localdate() - timedelta(days=1))
+            self._ask(game_session, "질문 2")
+
+        self.assertEqual(classifier.call_count, 2)
+
+    @override_settings(DAILY_AI_BUDGET_USD=1.0, AI_PRICE_INPUT_PER_MTOK=2, AI_PRICE_OUTPUT_PER_MTOK=10,
+                       AI_PRICE_CACHE_WRITE_PER_MTOK=2.5, AI_PRICE_CACHE_READ_PER_MTOK=0.1)
+    def test_budget_stop_uses_todays_estimated_cost(self):
+        game_session = _owned_game(self.client, puzzle=self.puzzle)
+        # $0.20 input + $0.70 output + $0.025 cache write + $0.01 cache read = $0.935 today.
+        AIUsageLog.objects.create(operation="question", model="m", input_tokens=100_000, output_tokens=70_000,
+                                  cache_creation_input_tokens=10_000, cache_read_input_tokens=100_000)
+        old = AIUsageLog.objects.create(operation="question", model="m", output_tokens=1_000_000)
+        AIUsageLog.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=1))
+        self.assertAlmostEqual(estimated_cost_usd(), 0.935)
+
+        with patch("game.views.classify_question", return_value=QuestionJudgement(label=LABEL_NO)) as classifier:
+            self._ask(game_session, "질문 1")
+            AIUsageLog.objects.create(operation="question", model="m", output_tokens=10_000)
+            response = self._ask(game_session, "질문 2")
+
+        self.assertEqual(classifier.call_count, 1)
+        self.assertContains(response, "오늘 준비한 진행자 이용량이 모두 소진됐어요.")
+
+    @override_settings(DAILY_AI_BUDGET_USD=0.01)
+    def test_admin_usage_list_shows_todays_estimate(self):
+        admin_user = get_user_model().objects.create_superuser("boss", password=None)
+        self.client.force_login(admin_user)
+
+        response = self.client.get(reverse("admin:game_aiusagelog_changelist"))
+
+        self.assertContains(response, "오늘 예상 사용액: $0.0000 (하루 예산 $0.01")
+
+
 class StarterFixtureTests(TestCase):
     fixtures = ["starter_puzzles"]
 
@@ -1019,17 +1128,6 @@ class PuzzleTransferCommandTests(TestCase):
             self._call("import_puzzles", self.path.replace("/private/puzzles.json", "/bad.json"))
         with self.assertRaises(CommandError):
             self._call("import_puzzles", f"{self.tmp.name}/missing.json")
-
-
-GOOGLE_TEST_SETTINGS = {
-    "GOOGLE_LOGIN_ENABLED": True,
-    "SOCIALACCOUNT_PROVIDERS": {
-        "google": {
-            "APPS": [{"client_id": "test-client", "secret": "test-secret", "key": ""}],
-            "SCOPE": ["profile", "email"],
-        }
-    },
-}
 
 
 class AccountTests(TestCase):

@@ -1,8 +1,8 @@
 # Active Context
 
 Status: In progress - rankings with Google login (multiplayer type A)
-Active plan: Docs/Harness/Plans/004-ranking-and-login.md (phase 1 done and live
-Google login verified locally, not committed yet; phases 2-4 next)
+Active plan: Docs/Harness/Plans/004-ranking-and-login.md (phase 1 committed 067ab12
+and pushed; phase 2 cost limits done, not committed; phase 3 rankings next)
 
 ## Current work
 Claude game master is live locally on claude-sonnet-5-5: structured judging with
