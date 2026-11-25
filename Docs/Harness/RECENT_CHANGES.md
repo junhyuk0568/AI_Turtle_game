@@ -122,3 +122,4 @@ Purpose: the play page intro promises short answers, so judgements read 그렇�
 Internal labels and the Claude contract are unchanged; system notices keep the polite style.
 Verification: offline gate PASS; browser shows all four stamps in the new wording.
 Follow-up: the unfamiliar word "미결" was replaced (header seal "사건", home label "미제 사건 기록부").
+Follow-up: example placeholder text removed from the question and final-statement boxes (aria-labels added).

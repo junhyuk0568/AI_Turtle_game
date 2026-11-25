@@ -1212,6 +1212,9 @@ class ResultAndHomeTests(TestCase):
         self.assertContains(response, 'class="message-bubble host judgement yes"')
         for image in ("avatar", "game-logo", ".png"):
             self.assertNotContains(response, image)
+        # Input boxes start empty: no example text behind the cursor.
+        self.assertNotContains(response, "placeholder=")
+        self.assertContains(response, 'aria-label="진행자에게 할 질문"')
 
 
 class PuzzleTransferCommandTests(TestCase):

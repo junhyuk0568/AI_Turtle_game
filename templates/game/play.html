@@ -260,10 +260,6 @@
         resize: vertical;
     }
 
-    textarea::placeholder {
-        color: #8d7d61;
-    }
-
     textarea:focus {
         border-color: var(--ink);
         outline: 2px solid rgba(155, 44, 34, 0.35);
@@ -482,7 +478,7 @@
             <p class="composer-error" data-composer-error role="alert" hidden></p>
             <form class="composer-form" method="post" action="{% url 'game:ask_question' game_session.id %}" data-async-question>
                 {% csrf_token %}
-                <textarea name="question_text" maxlength="500" placeholder="예: 남자는 식당에서 수프를 먹었나요?" required autofocus></textarea>
+                <textarea name="question_text" maxlength="500" aria-label="진행자에게 할 질문" required autofocus></textarea>
                 <button class="button" type="submit">묻기</button>
             </form>
         </div>
@@ -544,7 +540,7 @@
 
         <form method="post" action="{% url 'game:submit_final_answer' game_session.id %}">
             {% csrf_token %}
-            <textarea name="submitted_answer" maxlength="2000" placeholder="예: 남자는 과거 조난 때 먹은 음식의 정체를 깨달았다." required></textarea>
+            <textarea name="submitted_answer" maxlength="2000" aria-label="최종 진술" required></textarea>
             <div class="answer-dialog-actions">
                 <button class="button secondary" type="button" data-answer-close>계속 수사하기</button>
                 <button class="button" type="submit">진술서 제출</button>
